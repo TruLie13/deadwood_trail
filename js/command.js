@@ -99,7 +99,7 @@ const Command = (() => {
 
     async function version() {
         await Term.writelns(`DEADWOOD TRAIL - ${App.version}\n`);
-        await Term.writelns("A SUPERNATURAL CATTLE-DRIVE SURVIVAL PROTOTYPE BUILT ON THE OREGON TRAIL BROWSER SHELL.\n");
+        await Term.writelns("A SUPERNATURAL CATTLE-DRIVE SURVIVAL PROTOTYPE BUILT ON AN IMPORTED TERMINAL BROWSER SHELL.\n");
         await Term.writelns("SOURCE CODE");
         await Term.writelns(" UPSTREAM SHELL: HTTPS://GITHUB.COM/ATTILABUTI/OREGON-TRAIL-BROWSER");
         await Term.writelns(" VARIANT:       DEADWOOD TRAIL");
@@ -110,7 +110,7 @@ const Command = (() => {
             if (Term.cols >= 80 && App.banner.length > 0) {
                 await Term.writelns(App.banner + "\n");
             } else {
-                await Term.writelns("THE OREGON TRAIL\n");
+                await Term.writelns("DEADWOOD TRAIL\n");
             }
 
             await Term.writelns(App.about);
