@@ -46,6 +46,7 @@ namespace DeadwoodModel {
         hunger: number;
         health: number;
         cattleSkill: number;
+        huntSkill: number;
         loyalty: number;
         guardDutyCount: number;
         foodReceivedTotal: number;
@@ -97,6 +98,84 @@ namespace DeadwoodModel {
 
     export function effectiveCrewCattleSkill(member: CrewMember): number {
         return Math.round(member.cattleSkill * crewSkillModifier(member));
+    }
+
+    export function huntSkillModifier(member: CrewMember): number {
+        const fearFactor = clamp(1 - (member.fear / 180), 0.55, 1.0);
+        const moraleFactor = clamp(0.76 + (member.morale / 240), 0.65, 1.03);
+        const healthFactor = clamp(0.68 + (member.health / 260), 0.6, 1.0);
+        const hungerFactor = clamp(1 - (member.hunger / 230), 0.62, 1.0);
+        return Number((fearFactor * moraleFactor * healthFactor * hungerFactor).toFixed(3));
+    }
+
+    export function effectiveHuntSkill(member: CrewMember): number {
+        return Math.round(member.huntSkill * huntSkillModifier(member));
+    }
+
+    export function backupHunterPenalty(member: CrewMember): number {
+        const effective = effectiveHuntSkill(member);
+        return Math.max(0, Math.round((60 - effective) * 0.6));
+    }
+
+    export function backupHuntShotChance(baseChance: number, member: CrewMember): number {
+        const chanceValue = baseChance - backupHunterPenalty(member);
+        return clamp(chanceValue, 15, baseChance);
+    }
+
+    export function backupHuntSkillGain(hits: number, bulletsSpent: number): number {
+        if (bulletsSpent <= 0) {
+            return 0;
+        }
+
+        if (hits <= 0) {
+            return 1;
+        }
+
+        if (hits >= Math.max(4, Math.ceil(bulletsSpent * 0.6))) {
+            return 3;
+        }
+
+        return 2;
+    }
+
+    export function hunterTraplineChance(member: CrewMember): number {
+        if (!member.alive || member.role !== "hunter") {
+            return 0;
+        }
+
+        if (member.health <= 30 || member.fear >= 88) {
+            return 0;
+        }
+
+        let chanceValue = 10;
+
+        if (member.morale >= 75) {
+            chanceValue += 12;
+        } else if (member.morale >= 60) {
+            chanceValue += 7;
+        } else if (member.morale >= 45) {
+            chanceValue += 3;
+        }
+
+        if (member.health >= 78) {
+            chanceValue += 4;
+        } else if (member.health >= 62) {
+            chanceValue += 2;
+        }
+
+        if (member.fear >= 70) {
+            chanceValue -= 8;
+        } else if (member.fear >= 50) {
+            chanceValue -= 4;
+        }
+
+        if (member.hunger >= 75) {
+            chanceValue -= 6;
+        } else if (member.hunger >= 55) {
+            chanceValue -= 3;
+        }
+
+        return clamp(chanceValue, 0, 30);
     }
 
     export function crewHandlingContribution(member: CrewMember): number {

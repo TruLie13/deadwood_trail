@@ -21,6 +21,79 @@ var DeadwoodModel;
         return Math.round(member.cattleSkill * crewSkillModifier(member));
     }
     DeadwoodModel.effectiveCrewCattleSkill = effectiveCrewCattleSkill;
+    function huntSkillModifier(member) {
+        const fearFactor = clamp(1 - (member.fear / 180), 0.55, 1.0);
+        const moraleFactor = clamp(0.76 + (member.morale / 240), 0.65, 1.03);
+        const healthFactor = clamp(0.68 + (member.health / 260), 0.6, 1.0);
+        const hungerFactor = clamp(1 - (member.hunger / 230), 0.62, 1.0);
+        return Number((fearFactor * moraleFactor * healthFactor * hungerFactor).toFixed(3));
+    }
+    DeadwoodModel.huntSkillModifier = huntSkillModifier;
+    function effectiveHuntSkill(member) {
+        return Math.round(member.huntSkill * huntSkillModifier(member));
+    }
+    DeadwoodModel.effectiveHuntSkill = effectiveHuntSkill;
+    function backupHunterPenalty(member) {
+        const effective = effectiveHuntSkill(member);
+        return Math.max(0, Math.round((60 - effective) * 0.6));
+    }
+    DeadwoodModel.backupHunterPenalty = backupHunterPenalty;
+    function backupHuntShotChance(baseChance, member) {
+        const chanceValue = baseChance - backupHunterPenalty(member);
+        return clamp(chanceValue, 15, baseChance);
+    }
+    DeadwoodModel.backupHuntShotChance = backupHuntShotChance;
+    function backupHuntSkillGain(hits, bulletsSpent) {
+        if (bulletsSpent <= 0) {
+            return 0;
+        }
+        if (hits <= 0) {
+            return 1;
+        }
+        if (hits >= Math.max(4, Math.ceil(bulletsSpent * 0.6))) {
+            return 3;
+        }
+        return 2;
+    }
+    DeadwoodModel.backupHuntSkillGain = backupHuntSkillGain;
+    function hunterTraplineChance(member) {
+        if (!member.alive || member.role !== "hunter") {
+            return 0;
+        }
+        if (member.health <= 30 || member.fear >= 88) {
+            return 0;
+        }
+        let chanceValue = 10;
+        if (member.morale >= 75) {
+            chanceValue += 12;
+        }
+        else if (member.morale >= 60) {
+            chanceValue += 7;
+        }
+        else if (member.morale >= 45) {
+            chanceValue += 3;
+        }
+        if (member.health >= 78) {
+            chanceValue += 4;
+        }
+        else if (member.health >= 62) {
+            chanceValue += 2;
+        }
+        if (member.fear >= 70) {
+            chanceValue -= 8;
+        }
+        else if (member.fear >= 50) {
+            chanceValue -= 4;
+        }
+        if (member.hunger >= 75) {
+            chanceValue -= 6;
+        }
+        else if (member.hunger >= 55) {
+            chanceValue -= 3;
+        }
+        return clamp(chanceValue, 0, 30);
+    }
+    DeadwoodModel.hunterTraplineChance = hunterTraplineChance;
     function crewHandlingContribution(member) {
         const leaderBonus = member.isLeader ? 1.08 : 1;
         return Math.round(effectiveCrewCattleSkill(member) * leaderBonus);

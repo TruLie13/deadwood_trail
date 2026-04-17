@@ -33,6 +33,7 @@ function makeCrewMember(id, overrides = {}) {
     hunger: 20,
     health: 80,
     cattleSkill: 100,
+    huntSkill: 55,
     loyalty: 70,
     guardDutyCount: 0,
     foodReceivedTotal: 0,
@@ -87,6 +88,35 @@ test('huntCleanChance reflects westward penalties and one-night modifiers', () =
   assert.equal(DeadwoodModel.huntCleanChance(150, false, false), 65);
   assert.equal(DeadwoodModel.huntCleanChance(350, true, false), 65);
   assert.equal(DeadwoodModel.huntCleanChance(600, true, true), 55);
+});
+
+test('effectiveHuntSkill drops when the same fallback shooter is frightened and worn down', () => {
+  const steadyScout = makeCrewMember(1, { role: 'scout', huntSkill: 72, fear: 16, morale: 70, hunger: 18, health: 84 });
+  const rattledScout = makeCrewMember(2, { role: 'scout', huntSkill: 72, fear: 82, morale: 18, hunger: 79, health: 34 });
+  assert.ok(DeadwoodModel.effectiveHuntSkill(steadyScout) > DeadwoodModel.effectiveHuntSkill(rattledScout));
+});
+
+test('backupHuntShotChance keeps backup shooters at or below the normal hunt baseline', () => {
+  const steadyScout = makeCrewMember(1, { role: 'scout', huntSkill: 72, fear: 16, morale: 70, hunger: 18, health: 84 });
+  assert.equal(DeadwoodModel.backupHuntShotChance(70, steadyScout), 70);
+});
+
+test('backupHuntShotChance drops sharply for a frightened, starving fallback shooter', () => {
+  const rattledHand = makeCrewMember(2, { huntSkill: 34, fear: 82, morale: 18, hunger: 79, health: 34 });
+  assert.equal(DeadwoodModel.backupHuntShotChance(70, rattledHand), 39);
+});
+
+test('backupHuntSkillGain rewards backup shooters for participation and strong results', () => {
+  assert.equal(DeadwoodModel.backupHuntSkillGain(0, 8), 1);
+  assert.equal(DeadwoodModel.backupHuntSkillGain(2, 8), 2);
+  assert.equal(DeadwoodModel.backupHuntSkillGain(5, 8), 3);
+});
+
+test('hunterTraplineChance rewards a steady hunter and shuts down when the hunter is broken', () => {
+  const steadyHunter = makeCrewMember(1, { role: 'hunter', huntSkill: 88, morale: 78, fear: 18, health: 79, hunger: 20 });
+  const brokenHunter = makeCrewMember(2, { role: 'hunter', huntSkill: 88, morale: 20, fear: 90, health: 28, hunger: 82 });
+  assert.equal(DeadwoodModel.hunterTraplineChance(steadyHunter), 26);
+  assert.equal(DeadwoodModel.hunterTraplineChance(brokenHunter), 0);
 });
 
 test('herdCompositionLine reports infected later-trail herd composition', () => {

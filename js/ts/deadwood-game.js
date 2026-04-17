@@ -13,6 +13,9 @@
     const FULL_HUNT_AMMO = 8;
     const FOOD_PER_HIT_MIN = 18;
     const FOOD_PER_HIT_MAX = 30;
+    const BACKUP_HUNT_SKILL_CAP = 76;
+    const TRAPLINE_FOOD_MIN = 4;
+    const TRAPLINE_FOOD_MAX = 8;
     const LANDMARKS = [
         {
             mile: 120,
@@ -91,6 +94,7 @@
     let lastStatusSnapshot = null;
     let debugMode = false;
     let debugOverlayEl = null;
+    const debugCardOpenState = {};
     function createInitialState() {
         const crew = createInitialCrew();
         const crewSummary = summarizeCrew(crew);
@@ -248,6 +252,7 @@
                 ["hunger", `${member.hunger}`],
                 ["loyalty", `${member.loyalty}`],
                 ["skill", `${member.cattleSkill} base / ${effectiveSkill} effective`],
+                ["hunt skill", `${member.huntSkill}`],
                 ["guard duty", `${member.guardDutyCount}`],
                 ["food received", `${member.foodReceivedTotal.toFixed(1)}`],
                 ["whiskey received", `${member.whiskeyReceivedTotal}`],
@@ -259,9 +264,12 @@
             </div>
         `;
     }
-    function renderDebugCard(title, body, open = true) {
+    function renderDebugCard(key, title, body, open = true) {
+        const isOpen = Object.prototype.hasOwnProperty.call(debugCardOpenState, key)
+            ? debugCardOpenState[key]
+            : open;
         return `
-            <details class="deadwood-debug-card"${open ? " open" : ""}>
+            <details class="deadwood-debug-card" data-debug-card="${escapeHtml(key)}"${isOpen ? " open" : ""}>
                 <summary class="deadwood-debug-card-summary">
                     <span class="deadwood-debug-card-title">${escapeHtml(title)}</span>
                     <span class="deadwood-debug-card-toggle">Toggle</span>
@@ -309,7 +317,7 @@
                     <span class="deadwood-debug-title">Trail Inspector</span>
                     <span class="deadwood-debug-badge">TEST</span>
                 </div>
-                ${renderDebugCard("Run", `
+                ${renderDebugCard("run", "Run", `
                     <div class="deadwood-debug-grid">
                         ${renderDebugRows([
             ["state", state.active ? `${state.phase.toUpperCase()} / WEEK ${state.week}` : "ENDED"],
@@ -325,7 +333,7 @@
         ])}
                     </div>
                 `)}
-                ${renderDebugCard("Crew Hidden", `
+                ${renderDebugCard("crew-hidden", "Crew Hidden", `
                     <div class="deadwood-debug-grid">
                         ${renderDebugRows([
             ["leader", leader ? leader.name : "none"],
@@ -344,7 +352,7 @@
                     </div>
                     ${renderCrewMemberInspector(state.crew)}
                 `)}
-                ${renderDebugCard("Herd Hidden", `
+                ${renderDebugCard("herd-hidden", "Herd Hidden", `
                     <div class="deadwood-debug-grid">
                         ${renderDebugRows([
             ["injured", `${injuredCount}`],
@@ -359,13 +367,16 @@
                     </div>
                     ${renderDebugList(topRisk)}
                 `)}
-                ${renderDebugCard("Hunt", `
+                ${renderDebugCard("hunt", "Hunt", `
                     <div class="deadwood-debug-grid">
                         ${renderDebugRows([
             ["mode", state.ammo > 0 ? "HUNT READY" : "OUT OF AMMO"],
-            ["next shot rate", `${huntShotChance()}%`],
+            ["lead shooter", huntLeadText()],
+            ["next shot rate", `${huntPreviewShotChance()}%`],
             ["next clean rate", `${huntCleanChance()}%`],
+            ["fallback penalty", `${huntPreviewPenalty()}`],
             ["last bullets", lastHunt ? `${lastHunt.bulletsSpent}` : "none"],
+            ["last shooter", lastHunt ? `${lastHunt.actorName} (${lastHunt.actorRole})` : "none"],
             ["last hits", lastHunt ? `${lastHunt.hits}` : "none"],
             ["last clean food", lastHunt ? `${lastHunt.cleanFood}` : "none"],
             ["last blighted food", lastHunt ? `${lastHunt.blightedFood}` : "none"],
@@ -379,7 +390,7 @@
                     ` : ""}
                     ${renderHuntBulletRows(lastHunt)}
                 `)}
-                ${renderDebugCard("Triggers", `
+                ${renderDebugCard("triggers", "Triggers", `
                     <div class="deadwood-debug-grid">
                         ${renderDebugRows([
             ["ambient zone", ambient.label],
@@ -394,6 +405,15 @@
                 `)}
             </div>
         `;
+        overlay.querySelectorAll(".deadwood-debug-card").forEach(card => {
+            card.addEventListener("toggle", () => {
+                const details = card;
+                const key = details.dataset.debugCard;
+                if (key) {
+                    debugCardOpenState[key] = details.open;
+                }
+            });
+        });
     }
     function setDebugMode(nextDebugMode) {
         debugMode = nextDebugMode;
@@ -425,6 +445,7 @@
             hunger: 18,
             health: 88,
             cattleSkill: 92,
+            huntSkill: 58,
             loyalty: 92,
             guardDutyCount: 0,
             foodReceivedTotal: 0,
@@ -433,10 +454,10 @@
         for (let attempt = 0; attempt < 20; attempt += 1) {
             const crew = [
                 leader,
-                { id: 2, name: "MARA QUILL", role: "scout", alive: true, isLeader: false, fear: randInt(16, 22), morale: randInt(60, 70), hunger: randInt(18, 22), health: randInt(75, 82), cattleSkill: randInt(54, 72), loyalty: randInt(68, 76), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-                { id: 3, name: "JONAH REED", role: "drover", alive: true, isLeader: false, fear: randInt(14, 20), morale: randInt(62, 72), hunger: randInt(17, 21), health: randInt(78, 86), cattleSkill: randInt(60, 78), loyalty: randInt(72, 80), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-                { id: 4, name: "ELIAS VOSS", role: "hunter", alive: true, isLeader: false, fear: randInt(18, 24), morale: randInt(56, 66), hunger: randInt(19, 23), health: randInt(72, 79), cattleSkill: randInt(48, 68), loyalty: randInt(64, 72), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-                { id: 5, name: "RUTH CALDWELL", role: "hand", alive: true, isLeader: false, fear: randInt(15, 21), morale: randInt(58, 68), hunger: randInt(18, 22), health: randInt(76, 84), cattleSkill: randInt(46, 66), loyalty: randInt(66, 74), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+                { id: 2, name: "MARA QUILL", role: "scout", alive: true, isLeader: false, fear: randInt(16, 22), morale: randInt(60, 70), hunger: randInt(18, 22), health: randInt(75, 82), cattleSkill: randInt(54, 72), huntSkill: randInt(58, 74), loyalty: randInt(68, 76), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+                { id: 3, name: "JONAH REED", role: "drover", alive: true, isLeader: false, fear: randInt(14, 20), morale: randInt(62, 72), hunger: randInt(17, 21), health: randInt(78, 86), cattleSkill: randInt(60, 78), huntSkill: randInt(46, 60), loyalty: randInt(72, 80), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+                { id: 4, name: "ELIAS VOSS", role: "hunter", alive: true, isLeader: false, fear: randInt(18, 24), morale: randInt(56, 66), hunger: randInt(19, 23), health: randInt(72, 79), cattleSkill: randInt(48, 68), huntSkill: randInt(82, 94), loyalty: randInt(64, 72), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+                { id: 5, name: "RUTH CALDWELL", role: "hand", alive: true, isLeader: false, fear: randInt(15, 21), morale: randInt(58, 68), hunger: randInt(18, 22), health: randInt(76, 84), cattleSkill: randInt(46, 66), huntSkill: randInt(34, 50), loyalty: randInt(66, 74), guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
             ];
             if (summarizeCrew(crew).handlingCapacity >= 540) {
                 return crew;
@@ -444,10 +465,10 @@
         }
         return [
             leader,
-            { id: 2, name: "MARA QUILL", role: "scout", alive: true, isLeader: false, fear: 18, morale: 66, hunger: 20, health: 79, cattleSkill: 68, loyalty: 72, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-            { id: 3, name: "JONAH REED", role: "drover", alive: true, isLeader: false, fear: 16, morale: 68, hunger: 19, health: 82, cattleSkill: 76, loyalty: 76, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-            { id: 4, name: "ELIAS VOSS", role: "hunter", alive: true, isLeader: false, fear: 20, morale: 61, hunger: 21, health: 75, cattleSkill: 62, loyalty: 68, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
-            { id: 5, name: "RUTH CALDWELL", role: "hand", alive: true, isLeader: false, fear: 17, morale: 64, hunger: 19, health: 80, cattleSkill: 60, loyalty: 70, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+            { id: 2, name: "MARA QUILL", role: "scout", alive: true, isLeader: false, fear: 18, morale: 66, hunger: 20, health: 79, cattleSkill: 68, huntSkill: 66, loyalty: 72, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+            { id: 3, name: "JONAH REED", role: "drover", alive: true, isLeader: false, fear: 16, morale: 68, hunger: 19, health: 82, cattleSkill: 76, huntSkill: 54, loyalty: 76, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+            { id: 4, name: "ELIAS VOSS", role: "hunter", alive: true, isLeader: false, fear: 20, morale: 61, hunger: 21, health: 75, cattleSkill: 62, huntSkill: 88, loyalty: 68, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
+            { id: 5, name: "RUTH CALDWELL", role: "hand", alive: true, isLeader: false, fear: 17, morale: 64, hunger: 19, health: 80, cattleSkill: 60, huntSkill: 42, loyalty: 70, guardDutyCount: 0, foodReceivedTotal: 0, whiskeyReceivedTotal: 0 },
         ];
     }
     function createInitialHerd(count) {
@@ -474,6 +495,7 @@
         member.health = clampStat(member.health);
         member.loyalty = clampStat(member.loyalty);
         member.cattleSkill = Math.max(0, member.cattleSkill);
+        member.huntSkill = clamp(member.huntSkill, 0, 100);
         if (member.health <= 0 || member.morale <= 0 && member.fear >= 90) {
             member.alive = false;
         }
@@ -1441,15 +1463,118 @@
         const capacityPenalty = Math.min(22, Math.floor(overload / 18));
         return Math.max(12, base - fatiguePenalty - stressPenalty - fearPenalty - moralePenalty - healthPenalty - capacityPenalty);
     }
+    function designatedHunter() {
+        return livingCrew().find(member => member.role === "hunter");
+    }
+    function huntFallbackPool() {
+        return livingCrew().filter(member => member.role !== "hunter");
+    }
+    function chooseActingHunter() {
+        const hunter = designatedHunter();
+        if (hunter) {
+            return { actor: hunter, fallbackShooter: false };
+        }
+        const pool = huntFallbackPool();
+        if (pool.length === 0) {
+            return { actor: null, fallbackShooter: false };
+        }
+        return {
+            actor: [...pool].sort((left, right) => right.huntSkill - left.huntSkill ||
+                right.health - left.health ||
+                left.fear - right.fear)[0],
+            fallbackShooter: true,
+        };
+    }
+    function huntShotPenaltyFor(actor, fallbackShooter) {
+        if (!actor || !fallbackShooter) {
+            return 0;
+        }
+        return DeadwoodModel.backupHunterPenalty(actor);
+    }
+    function huntShotChanceFor(actor, fallbackShooter) {
+        const baseChance = huntShotChance();
+        if (!actor || !fallbackShooter) {
+            return baseChance;
+        }
+        return DeadwoodModel.backupHuntShotChance(baseChance, actor);
+    }
+    function huntLeadText() {
+        const hunter = designatedHunter();
+        if (hunter) {
+            return `${hunter.name} (HUNTER)`;
+        }
+        const pool = huntFallbackPool();
+        if (pool.length === 0) {
+            return "NO SHOOTER";
+        }
+        const backup = [...pool].sort((left, right) => right.huntSkill - left.huntSkill ||
+            right.health - left.health ||
+            left.fear - right.fear)[0];
+        return `${backup.name} (BACKUP)`;
+    }
+    function huntPreviewShotChance() {
+        const hunter = designatedHunter();
+        if (hunter) {
+            return huntShotChance();
+        }
+        const pool = huntFallbackPool();
+        if (pool.length === 0) {
+            return 0;
+        }
+        const total = pool.reduce((sum, member) => sum + DeadwoodModel.backupHuntShotChance(huntShotChance(), member), 0);
+        return Math.round(total / pool.length);
+    }
+    function huntPreviewPenalty() {
+        const hunter = designatedHunter();
+        if (hunter) {
+            return "0";
+        }
+        const pool = huntFallbackPool();
+        if (pool.length === 0) {
+            return "n/a";
+        }
+        const penalties = pool.map(member => DeadwoodModel.backupHunterPenalty(member));
+        const minPenalty = Math.min(...penalties);
+        const maxPenalty = Math.max(...penalties);
+        return minPenalty === maxPenalty ? `-${minPenalty}` : `-${minPenalty} to -${maxPenalty}`;
+    }
+    function applyBackupHuntExperience(actor, result) {
+        if (!result.fallbackShooter || actor.role === "hunter") {
+            return 0;
+        }
+        const gain = DeadwoodModel.backupHuntSkillGain(result.hits, result.bulletsSpent);
+        if (gain <= 0) {
+            return 0;
+        }
+        const before = actor.huntSkill;
+        actor.huntSkill = Math.min(BACKUP_HUNT_SKILL_CAP, actor.huntSkill + gain);
+        return actor.huntSkill - before;
+    }
+    function resolveHunterTrapline() {
+        const hunter = designatedHunter();
+        if (!hunter) {
+            return;
+        }
+        const trapChance = DeadwoodModel.hunterTraplineChance(hunter);
+        if (trapChance <= 0 || !chance(trapChance)) {
+            return;
+        }
+        const foodFound = randInt(TRAPLINE_FOOD_MIN, TRAPLINE_FOOD_MAX);
+        state.food += foodFound;
+        state.pendingMessages.push(`TRAPLINE: ${hunter.name} CHECKS THE SNARES AT FIRST LIGHT AND BRINGS IN ${foodFound} CLEAN FOOD.`);
+    }
     function huntCleanChance() {
         return DeadwoodModel.huntCleanChance(state.miles, state.occultHuntBonus, state.nightHuntPenalty);
     }
     function huntShotChance() {
         return DeadwoodModel.huntShotChance(state.miles, state.occultHuntBonus, state.nightHuntPenalty);
     }
-    function resolveHunt(bulletsSpent) {
-        const shotChance = huntShotChance();
+    function resolveHunt(bulletsSpent, actor, fallbackShooter) {
+        var _a, _b, _c;
+        const baseShotChance = huntShotChance();
+        const shotChance = huntShotChanceFor(actor, fallbackShooter);
         const cleanChance = huntCleanChance();
+        const shotPenalty = huntShotPenaltyFor(actor, fallbackShooter);
         let hits = 0;
         let cleanFood = 0;
         let blightedFood = 0;
@@ -1481,18 +1606,48 @@
                 blightedFood += food;
             }
         }
-        return { bulletsSpent, hits, cleanFood, blightedFood, shotChance, cleanChance, bullets };
+        return {
+            actorId: (_a = actor === null || actor === void 0 ? void 0 : actor.id) !== null && _a !== void 0 ? _a : null,
+            actorName: (_b = actor === null || actor === void 0 ? void 0 : actor.name) !== null && _b !== void 0 ? _b : "NO SHOOTER",
+            actorRole: (_c = actor === null || actor === void 0 ? void 0 : actor.role) !== null && _c !== void 0 ? _c : "none",
+            fallbackShooter,
+            bulletsSpent,
+            hits,
+            cleanFood,
+            blightedFood,
+            baseShotChance,
+            shotChance,
+            cleanChance,
+            shotPenalty,
+            bullets,
+        };
     }
     async function resolveHuntAction(bulletsSpent) {
         state.lastDayAction = "hunt";
+        const { actor, fallbackShooter } = chooseActingHunter();
+        if (!actor) {
+            await Term.writelns("NO ONE LEFT IN THE CREW CAN TAKE A HUNTING RIFLE INTO THE FIELD.");
+            await printDayPrompt();
+            return;
+        }
         state.ammo -= bulletsSpent;
         affectHerd({ fatigue: -6, stress: -4, health: 1 });
-        const result = resolveHunt(bulletsSpent);
+        const result = resolveHunt(bulletsSpent, actor, fallbackShooter);
         state.lastHuntResult = result;
+        const huntSkillGain = applyBackupHuntExperience(actor, result);
         const shotLabel = `${result.bulletsSpent} SHOT${result.bulletsSpent === 1 ? "" : "S"}`;
         const hitLabel = `${result.hits} HEAD`;
         state.occultHuntBonus = false;
         syncDebugOverlay();
+        if (result.fallbackShooter) {
+            await Term.writelns(`WITH NO TRUE HUNTER LEFT, ${result.actorName} TAKES THE HUNT. THE SHOTS COME LESS SURELY.`);
+        }
+        else {
+            await Term.writelns(`${result.actorName} TAKES THE HUNT.`);
+        }
+        if (huntSkillGain > 0) {
+            await Term.writelns(`${result.actorName} LEARNS THE RIFLE A LITTLE BETTER. HUNT SKILL +${huntSkillGain}.`);
+        }
         if (result.hits === 0) {
             affectCrew({ morale: -2, fear: 2 });
             await Term.writelns(`YOU FIRE ${shotLabel} INTO BAD COUNTRY AND BRING BACK NOTHING.`);
@@ -2623,6 +2778,8 @@
     async function endNight() {
         resolveNightDecay();
         resolveCrewConsequences();
+        normalizeState();
+        resolveHunterTrapline();
         normalizeState();
         if (await evaluateEndings()) {
             return;
