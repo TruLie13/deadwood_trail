@@ -112,6 +112,15 @@ test('backupHuntSkillGain rewards backup shooters for participation and strong r
   assert.equal(DeadwoodModel.backupHuntSkillGain(5, 8), 3);
 });
 
+test('blightedFoodContaminationAmount scales with the size of the tainted stores', () => {
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(0), 0);
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(5), 1);
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(20), 2);
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(40), 4);
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(70), 7);
+  assert.equal(DeadwoodModel.blightedFoodContaminationAmount(100), 10);
+});
+
 test('hunterTraplineChance rewards a steady hunter and shuts down when the hunter is broken', () => {
   const steadyHunter = makeCrewMember(1, { role: 'hunter', huntSkill: 88, morale: 78, fear: 18, health: 79, hunger: 20 });
   const brokenHunter = makeCrewMember(2, { role: 'hunter', huntSkill: 88, morale: 20, fear: 90, health: 28, hunger: 82 });

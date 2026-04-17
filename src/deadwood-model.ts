@@ -138,6 +138,30 @@ namespace DeadwoodModel {
         return 2;
     }
 
+    export function blightedFoodContaminationAmount(blightedFood: number): number {
+        if (blightedFood <= 0) {
+            return 0;
+        }
+
+        if (blightedFood <= 10) {
+            return 1;
+        }
+
+        if (blightedFood <= 25) {
+            return 2;
+        }
+
+        if (blightedFood <= 50) {
+            return 4;
+        }
+
+        if (blightedFood <= 80) {
+            return 7;
+        }
+
+        return 10;
+    }
+
     export function hunterTraplineChance(member: CrewMember): number {
         if (!member.alive || member.role !== "hunter") {
             return 0;

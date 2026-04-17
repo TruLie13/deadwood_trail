@@ -63,6 +63,7 @@ type GameState = {
     herdFatigue: number;
     herdBlight: number;
     food: number;
+    blightedFood: number;
     supplies: number;
     ammo: number;
     morale: number;
@@ -100,7 +101,7 @@ type StoreItem = "food" | "ammo" | "supplies" | "whiskey" | "grain" | "oil";
 
 type StatusSnapshot = Pick<
     GameState,
-    "week" | "miles" | "cattle" | "food" | "ammo" | "supplies" | "cash" |
+    "week" | "miles" | "cattle" | "food" | "blightedFood" | "ammo" | "supplies" | "cash" |
     "morale" | "fear" | "wagonCondition" | "wagonSanctity" | "whiskey" | "blessedGrain" | "wardingOil" |
     "herdHealth" | "herdStress" | "herdFatigue" | "herdBlight"
 >;
@@ -239,6 +240,7 @@ type WindowWithDeadwoodGame = Window & {
             herdFatigue: herdSummary.herdFatigue,
             herdBlight: herdSummary.herdBlight,
             food: STARTER_FOOD,
+            blightedFood: 0,
             supplies: STARTER_SUPPLIES,
             ammo: STARTER_AMMO,
             morale: crewSummary.morale,
@@ -476,7 +478,8 @@ type WindowWithDeadwoodGame = Window & {
                             ["miles", `${state.miles}/${state.destinationMiles}`],
                             ["trade window", state.canTrade ? `${state.tradeLocation} / ${state.tradeTime}` : "closed"],
                             ["encounter", state.pendingEncounter ?? "none"],
-                            ["blighted food", `${state.pendingBlightedFood}`],
+                            ["blighted stores", `${state.blightedFood}`],
+                            ["pending blight", `${state.pendingBlightedFood}`],
                             ["damned trades", `${state.damnedTradeCount}/3 used`],
                             ["recent cattle loss", `${state.recentCattleLossWeeks} week(s)`],
                             ["occultist", debugBoolean(state.hasOccultist)],
@@ -645,6 +648,18 @@ type WindowWithDeadwoodGame = Window & {
         return member.name.split(" ")[0];
     }
 
+    function formatNameList(names: string[]): string {
+        if (names.length <= 1) {
+            return names[0] ?? "";
+        }
+
+        if (names.length === 2) {
+            return `${names[0]} AND ${names[1]}`;
+        }
+
+        return `${names.slice(0, -1).join(", ")}, AND ${names[names.length - 1]}`;
+    }
+
     function findLivingLeader(crew: CrewMember[] = state.crew): CrewMember | undefined {
         return livingCrew(crew).find(member => member.isLeader);
     }
@@ -784,6 +799,86 @@ type WindowWithDeadwoodGame = Window & {
             }
         }
         syncCrewSummary();
+    }
+
+    function rationFoodCost(level: RationLevel): number {
+        if (level === "poor") {
+            return 8;
+        }
+
+        if (level === "well") {
+            return 20;
+        }
+
+        return 14;
+    }
+
+    function applyStoredBlightContamination() {
+        if (state.blightedFood <= 0 || state.food <= 0) {
+            return;
+        }
+
+        const spoiled = Math.min(state.food, DeadwoodModel.blightedFoodContaminationAmount(state.blightedFood));
+        if (spoiled <= 0) {
+            return;
+        }
+
+        state.food -= spoiled;
+        state.blightedFood += spoiled;
+        state.pendingMessages.push(`BLIGHT: ${spoiled} CLEAN FOOD SPOILS IN THE WAGON AND JOINS THE TAINTED STORES.`);
+    }
+
+    function chooseBlightedEaters(blightedUsed: number, requiredFood: number): CrewMember[] {
+        const living = [...livingCrew()].sort((left, right) =>
+            right.hunger - left.hunger ||
+            left.health - right.health ||
+            left.morale - right.morale
+        );
+
+        if (living.length === 0 || blightedUsed <= 0 || requiredFood <= 0) {
+            return [];
+        }
+
+        const coverage = blightedUsed / requiredFood;
+        const eaterCount = clamp(Math.ceil(living.length * coverage), 1, living.length);
+        return living.slice(0, eaterCount);
+    }
+
+    function applyBlightedMealConsequences(blightedUsed: number, requiredFood: number) {
+        const eaters = chooseBlightedEaters(blightedUsed, requiredFood);
+        if (eaters.length === 0) {
+            return;
+        }
+
+        const coverage = blightedUsed / requiredFood;
+        const healthPenalty =
+            coverage >= 0.75 ? 6 :
+            coverage >= 0.5 ? 5 :
+            coverage >= 0.25 ? 4 :
+            3;
+        const fearPenalty =
+            coverage >= 0.75 ? 8 :
+            coverage >= 0.5 ? 7 :
+            coverage >= 0.25 ? 6 :
+            5;
+        const moralePenalty =
+            coverage >= 0.75 ? 6 :
+            coverage >= 0.5 ? 5 :
+            4;
+        const loyaltyPenalty = coverage >= 0.5 ? 2 : 1;
+
+        for (const member of eaters) {
+            member.health -= healthPenalty + randInt(-1, 1);
+            member.fear += fearPenalty + randInt(-1, 1);
+            member.morale -= moralePenalty + randInt(-1, 1);
+            member.loyalty -= loyaltyPenalty + randInt(0, 1);
+            updateCrewMember(member);
+        }
+
+        syncCrewSummary();
+        const names = formatNameList(eaters.map(member => crewFirstName(member)));
+        const verb = eaters.length === 1 ? "EATS" : "EAT";
+        state.pendingMessages.push(`DESPERATION: ${names} ${verb} THE TAINTED PORTION. BY MORNING THE MEAT SITS WRONG IN THEIR BONES.`);
     }
 
     function distributeWhiskey() {
@@ -1350,6 +1445,7 @@ type WindowWithDeadwoodGame = Window & {
             miles: state.miles,
             cattle: state.cattle,
             food: state.food,
+            blightedFood: state.blightedFood,
             ammo: state.ammo,
             supplies: state.supplies,
             cash: state.cash,
@@ -1398,6 +1494,7 @@ type WindowWithDeadwoodGame = Window & {
             `WEEK ${state.week}${deltaText(state.week, previous?.week)}   MILES ${state.miles}/${state.destinationMiles}${deltaText(state.miles, previous?.miles)}   LOCATION ${locationName()}`,
             "",
             `FOOD ${state.food}${deltaText(state.food, previous?.food)}`,
+            `BLIGHTED FOOD ${state.blightedFood}${deltaText(state.blightedFood, previous?.blightedFood)}`,
             `AMMO ${state.ammo}${deltaText(state.ammo, previous?.ammo)}`,
             `SUPPLIES ${state.supplies}${deltaText(state.supplies, previous?.supplies)}`,
             `WHISKEY ${state.whiskey}${deltaText(state.whiskey, previous?.whiskey)}`,
@@ -1637,7 +1734,7 @@ type WindowWithDeadwoodGame = Window & {
     async function printBlightPrompt() {
         await printSection("BLIGHT", [
             `${state.pendingBlightedFood} FOOD IS BLIGHTED.`,
-            "TYPE TAKE TO KEEP THE BLIGHTED MEAT, OR LEAVE TO WALK AWAY FROM IT.",
+            "TYPE TAKE TO STOW THE BLIGHTED MEAT WITH YOUR STORES, OR LEAVE TO WALK AWAY FROM IT.",
         ]);
         Term.prompt();
     }
@@ -2810,29 +2907,34 @@ type WindowWithDeadwoodGame = Window & {
     }
 
     function applyRations(level: RationLevel) {
+        const requiredFood = rationFoodCost(level);
+        applyStoredBlightContamination();
+        const cleanUsed = Math.min(state.food, requiredFood);
+        state.food -= cleanUsed;
+        const remainingNeed = requiredFood - cleanUsed;
+        const blightedUsed = Math.min(state.blightedFood, remainingNeed);
+        state.blightedFood -= blightedUsed;
+
         if (level === "poor") {
-            state.food -= 8;
             affectCrew({ morale: -7, fear: 5, hunger: 6, health: -1, loyalty: -2 });
             distributeCrewFood(level);
             affectHerd({ health: -6, stress: 6, fatigue: 5 });
             state.pendingMessages.push("POOR RATIONS KEEP FOOD IN THE WAGON AND MISERY IN THE CREW. HUNGER MAKES EVERY SHADOW FEEL CLOSER.");
-            return;
-        }
-
-        if (level === "well") {
-            state.food -= 20;
+        } else if (level === "well") {
             affectCrew({ morale: 6, fear: -5, hunger: -7, health: 2, loyalty: 1 });
             distributeCrewFood(level);
             affectHerd({ health: 4, stress: -6, fatigue: -4 });
             state.pendingMessages.push("WELL-FED CREW. FOR ONE NIGHT, HOPE OUTWEIGHS DREAD.");
-            return;
+        } else {
+            affectCrew({ hunger: 1, morale: 2, fear: -1, health: 1 });
+            distributeCrewFood(level);
+            affectHerd({ health: 1, stress: -1, fatigue: -1 });
+            state.pendingMessages.push("MODERATE RATIONS. NOBODY IS HAPPY, BUT NOBODY MUTINIES.");
         }
 
-        state.food -= 14;
-        affectCrew({ hunger: 1, morale: 2, fear: -1, health: 1 });
-        distributeCrewFood(level);
-        affectHerd({ health: 1, stress: -1, fatigue: -1 });
-        state.pendingMessages.push("MODERATE RATIONS. NOBODY IS HAPPY, BUT NOBODY MUTINIES.");
+        if (blightedUsed > 0) {
+            applyBlightedMealConsequences(blightedUsed, requiredFood);
+        }
     }
 
     async function handleNightCommand(input: string) {
@@ -2952,18 +3054,9 @@ type WindowWithDeadwoodGame = Window & {
 
     async function handleBlightCommand(input: string) {
         if (input === "take" || input === "feed") {
-            state.food += state.pendingBlightedFood;
-            affectCrew({ fear: 12, morale: -6, health: -1 });
-            affectHerd({ blight: 5, stress: 6 });
-            applyToCowSubset(chooseCowSubset(percentOfHerd(18), "weakest"), cow => {
-                cow.blight += randInt(6, 12);
-                cow.stress += randInt(4, 8);
-                cow.infected = true;
-                if (cow.health < 45) {
-                    cow.health -= randInt(1, 3);
-                }
-            });
-            await Term.writelns(`YOU KEEP ${state.pendingBlightedFood} FOOD. THE CREW EATS IT, BUT NOBODY TRUSTS THEIR DREAMS AFTER.`);
+            state.blightedFood += state.pendingBlightedFood;
+            affectCrew({ fear: 12, morale: -6, health: -4 });
+            await Term.writelns(`YOU KEEP ${state.pendingBlightedFood} FOOD AND WRAP IT INTO THE STORES. THE CAMP FEELS WRONG THE MOMENT THE TAINTED MEAT JOINS THE WAGON.`);
             state.pendingBlightedFood = 0;
             await transitionToRations();
             return;
@@ -3147,12 +3240,14 @@ type WindowWithDeadwoodGame = Window & {
         state.wagonCondition = clamp(state.wagonCondition, 0, 100);
         state.wagonSanctity = clamp(state.wagonSanctity, 0, 100);
         state.food = Math.max(0, state.food);
+        state.blightedFood = Math.max(0, state.blightedFood);
         state.supplies = Math.max(0, state.supplies);
         state.ammo = Math.max(0, state.ammo);
         state.whiskey = Math.max(0, state.whiskey);
         state.blessedGrain = Math.max(0, state.blessedGrain);
         state.wardingOil = Math.max(0, state.wardingOil);
         state.cash = Math.max(0, state.cash);
+        state.pendingBlightedFood = Math.max(0, state.pendingBlightedFood);
         syncCrewSummary();
         syncHerdSummary();
     }
@@ -3201,7 +3296,7 @@ type WindowWithDeadwoodGame = Window & {
             state.pendingMessages.push("CAUSE: THE WAGON FEELS THIN AND EXPOSED. THE CREW CAN SENSE THE SANCTITY FAILING.");
         }
 
-        if (state.food === 0) {
+        if (state.food === 0 && state.blightedFood === 0) {
             const hungryTargets = chooseCowSubset(percentOfHerd(18), "weakest");
             affectCrew({ morale: -12, fear: 6, hunger: 8, health: -2, loyalty: -3 });
             affectHerd({ health: -4, stress: 5, fatigue: 4 });
