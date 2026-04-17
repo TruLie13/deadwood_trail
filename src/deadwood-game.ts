@@ -780,6 +780,24 @@ type WindowWithDeadwoodGame = Window & {
         return DeadwoodModel.crewHandlingContribution(member);
     }
 
+    function healthDeathDetail(member: CrewMember): string {
+        const firstName = crewFirstName(member);
+
+        if (member.hunger >= 85) {
+            return `${firstName} FINALLY STARVES OUT ON THE TRAIL AFTER TOO MANY SHORT RATIONS AND TOO MANY BAD WEEKS.`;
+        }
+
+        if (member.fear >= 85 && member.morale <= 20) {
+            return `${firstName} DIES SHAKING AND HALF-MAD, WORN OUT BY FEAR BEFORE THE BODY CAN HOLD ON ANY LONGER.`;
+        }
+
+        if (member.morale <= 15) {
+            return `${firstName} SIMPLY GIVES OUT AFTER TOO MANY HARD WEEKS, TOO LITTLE HOPE, AND NO STRENGTH LEFT TO RISE AGAIN.`;
+        }
+
+        return `${firstName} DIES OF WOUNDS, SICKNESS, AND TRAIL WEAR THAT NEVER CLOSED CLEAN.`;
+    }
+
     function updateCrewMember(member: CrewMember) {
         const wasAlive = member.alive;
         member.fear = clampStat(member.fear);
@@ -793,6 +811,9 @@ type WindowWithDeadwoodGame = Window & {
         if (member.health <= 0) {
             member.alive = false;
             member.health = 0;
+            if (wasAlive) {
+                state.pendingMessages.push(`CREW LOSS: ${member.name} DIES. ${healthDeathDetail(member)}`);
+            }
             return;
         }
 
