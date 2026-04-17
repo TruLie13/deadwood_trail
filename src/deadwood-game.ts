@@ -92,8 +92,10 @@ type GameState = {
     rationChangedThisWeek: boolean;
     pendingEncounter: EncounterType;
     pendingScoutEncounter: EncounterType;
-    pendingScoutRoutePlan: ScoutRoutePlan;
     pendingScoutDetourMiles: number;
+    activeScoutEncounter: EncounterType;
+    activeScoutRoutePlan: ScoutRoutePlan;
+    activeScoutDetourMiles: number;
     cattleSkillMilestones: number;
     damnedTradeCount: number;
     recentCattleLossWeeks: number;
@@ -287,8 +289,10 @@ type WindowWithDeadwoodGame = Window & {
             rationChangedThisWeek: false,
             pendingEncounter: null,
             pendingScoutEncounter: null,
-            pendingScoutRoutePlan: null,
             pendingScoutDetourMiles: 0,
+            activeScoutEncounter: null,
+            activeScoutRoutePlan: null,
+            activeScoutDetourMiles: 0,
             cattleSkillMilestones: 0,
             damnedTradeCount: 0,
             recentCattleLossWeeks: 0,
@@ -585,7 +589,7 @@ type WindowWithDeadwoodGame = Window & {
                             ["trade window", state.canTrade ? `${state.tradeLocation} / ${state.tradeTime}` : "closed"],
                             ["encounter", state.pendingEncounter ?? "none"],
                             ["scout warning", state.pendingScoutEncounter ?? "none"],
-                            ["scout route", state.pendingScoutRoutePlan ? `${state.pendingScoutRoutePlan}${state.pendingScoutRoutePlan === "detour" ? ` / -${state.pendingScoutDetourMiles} mi` : ""}` : "none"],
+                            ["scout route", state.activeScoutRoutePlan ? `${state.activeScoutRoutePlan}${state.activeScoutRoutePlan === "detour" ? ` / -${state.activeScoutDetourMiles} mi` : ""}` : "none"],
                             ["blighted stores", `${state.blightedFood}`],
                             ["pending blight", `${state.pendingBlightedFood}`],
                             ["damned trades", `${state.damnedTradeCount}/3 used`],
@@ -777,6 +781,7 @@ type WindowWithDeadwoodGame = Window & {
     }
 
     function updateCrewMember(member: CrewMember) {
+        const wasAlive = member.alive;
         member.fear = clampStat(member.fear);
         member.morale = clampStat(member.morale);
         member.hunger = clampStat(member.hunger);
@@ -785,8 +790,19 @@ type WindowWithDeadwoodGame = Window & {
         member.cattleSkill = Math.max(0, member.cattleSkill);
         member.huntSkill = clamp(member.huntSkill, 0, 100);
 
-        if (member.health <= 0 || member.morale <= 0 && member.fear >= 90) {
+        if (member.health <= 0) {
             member.alive = false;
+            member.health = 0;
+            return;
+        }
+
+        if (member.morale <= 10 && member.fear >= 90) {
+            member.alive = false;
+            member.health = 0;
+            member.morale = 0;
+            if (wasAlive) {
+                state.pendingMessages.push(`CREW LOSS: ${member.name} DIES. ${crewFirstName(member)} CANNOT CARRY THE FEAR ANY FARTHER AND TAKES THEIR OWN LIFE BEFORE DAWN.`);
+            }
         }
     }
 
@@ -1760,10 +1776,10 @@ type WindowWithDeadwoodGame = Window & {
         const orders = availableDayCommands().map(command => command.toUpperCase());
         await printSection("ORDERS", [`TRAIL: ${orders.join(", ")}`]);
         await Term.writelns(`CURRENT RATIONS: ${rationLabel()}. ${state.rationChangedThisWeek ? "YOU HAVE ALREADY CHANGED THEM THIS WEEK." : 'TYPE "RATIONS" TO CHANGE THEM ONCE THIS WEEK.'}`);
-        if (state.pendingScoutEncounter && state.pendingScoutRoutePlan === "face") {
-            await Term.writelns(`SCOUT ROUTE: FACE ${scoutEncounterName(state.pendingScoutEncounter)} ON YOUR NEXT TRAVEL.`);
-        } else if (state.pendingScoutEncounter && state.pendingScoutRoutePlan === "detour") {
-            await Term.writelns(`SCOUT ROUTE: DETOUR AROUND ${scoutEncounterName(state.pendingScoutEncounter)}. NEXT TRAVEL LOSES ${state.pendingScoutDetourMiles} MILES.`);
+        if (state.activeScoutEncounter && state.activeScoutRoutePlan === "face") {
+            await Term.writelns(`SCOUT ROUTE: FACE ${scoutEncounterName(state.activeScoutEncounter)} ON YOUR NEXT TRAVEL.`);
+        } else if (state.activeScoutEncounter && state.activeScoutRoutePlan === "detour") {
+            await Term.writelns(`SCOUT ROUTE: DETOUR AROUND ${scoutEncounterName(state.activeScoutEncounter)}. NEXT TRAVEL LOSES ${state.activeScoutDetourMiles} MILES.`);
         }
         if (state.supplies < 4) {
             await Term.writelns("REPAIR OPTIONS REQUIRE SUPPLIES. YOU ARE SHORT ON MATERIALS.");
@@ -2059,8 +2075,13 @@ type WindowWithDeadwoodGame = Window & {
     }
 
     function clearScoutRoutePlan() {
+        state.activeScoutEncounter = null;
+        state.activeScoutRoutePlan = null;
+        state.activeScoutDetourMiles = 0;
+    }
+
+    function clearScoutWarning() {
         state.pendingScoutEncounter = null;
-        state.pendingScoutRoutePlan = null;
         state.pendingScoutDetourMiles = 0;
     }
 
@@ -2232,7 +2253,6 @@ type WindowWithDeadwoodGame = Window & {
             const warnedEncounter = scoutForewarnedEncounter();
             if (warnedEncounter) {
                 state.pendingScoutEncounter = warnedEncounter;
-                state.pendingScoutRoutePlan = null;
                 state.pendingScoutDetourMiles = scoutDetourMiles(warnedEncounter);
                 recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, true, `SPOTTED ${scoutEncounterName(warnedEncounter)}`);
                 return;
@@ -2888,8 +2908,8 @@ type WindowWithDeadwoodGame = Window & {
         if (input === "travel") {
             state.lastDayAction = "travel";
             state.occultHuntBonus = false;
-            const plannedEncounter = state.pendingScoutRoutePlan === "face" ? state.pendingScoutEncounter : null;
-            const detourPenalty = state.pendingScoutRoutePlan === "detour" ? state.pendingScoutDetourMiles : 0;
+            const plannedEncounter = state.activeScoutRoutePlan === "face" ? state.activeScoutEncounter : null;
+            const detourPenalty = state.activeScoutRoutePlan === "detour" ? state.activeScoutDetourMiles : 0;
             let miles = travelMiles(55, 95);
             if (detourPenalty > 0) {
                 miles = Math.max(12, miles - detourPenalty);
@@ -2906,15 +2926,15 @@ type WindowWithDeadwoodGame = Window & {
             });
             await Term.writelns(`YOU PUSH THE DRIVE FORWARD AND COVER ${miles} MILES THIS WEEK.`);
             await Term.writelns(travelWearLine(wear, fearGain));
-            if (detourPenalty > 0 && state.pendingScoutEncounter) {
-                await Term.writelns(`YOU TAKE THE LONGER LINE AND GIVE ${scoutEncounterName(state.pendingScoutEncounter)} A WIDE BERTH.`);
+            if (detourPenalty > 0 && state.activeScoutEncounter) {
+                await Term.writelns(`YOU TAKE THE LONGER LINE AND GIVE ${scoutEncounterName(state.activeScoutEncounter)} A WIDE BERTH.`);
             }
 
             if (plannedEncounter) {
                 clearScoutRoutePlan();
                 await triggerEncounterByType(plannedEncounter);
             } else {
-                const blockedEncounter = state.pendingScoutRoutePlan === "detour" ? state.pendingScoutEncounter : null;
+                const blockedEncounter = state.activeScoutRoutePlan === "detour" ? state.activeScoutEncounter : null;
                 clearScoutRoutePlan();
                 await trailEvent(blockedEncounter);
             }
@@ -3033,16 +3053,25 @@ type WindowWithDeadwoodGame = Window & {
         }
 
         if (input === "face it" || input === "face") {
-            state.pendingScoutRoutePlan = "face";
-            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(state.pendingScoutEncounter)} HEAD-ON.`);
+            const encounter = state.pendingScoutEncounter;
+            state.activeScoutEncounter = encounter;
+            state.activeScoutRoutePlan = "face";
+            state.activeScoutDetourMiles = 0;
+            clearScoutWarning();
+            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(encounter)} HEAD-ON.`);
             state.phase = "day";
             await printDayPrompt();
             return;
         }
 
         if (input === "detour" || input === "long way") {
-            state.pendingScoutRoutePlan = "detour";
-            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${state.pendingScoutDetourMiles} MILES BUT AVOIDS ${scoutEncounterName(state.pendingScoutEncounter)}.`);
+            const encounter = state.pendingScoutEncounter;
+            const detourMiles = state.pendingScoutDetourMiles;
+            state.activeScoutEncounter = encounter;
+            state.activeScoutRoutePlan = "detour";
+            state.activeScoutDetourMiles = detourMiles;
+            clearScoutWarning();
+            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${detourMiles} MILES BUT AVOIDS ${scoutEncounterName(encounter)}.`);
             state.phase = "day";
             await printDayPrompt();
             return;
@@ -3686,7 +3715,8 @@ type WindowWithDeadwoodGame = Window & {
         state.week += 1;
         state.recentCattleLossWeeks = Math.max(0, state.recentCattleLossWeeks - 1);
         state.rationChangedThisWeek = false;
-        state.phase = state.pendingScoutEncounter && !state.pendingScoutRoutePlan ? "scout" : "day";
+        clearScoutRoutePlan();
+        state.phase = state.pendingScoutEncounter ? "scout" : "day";
         await printStatus();
         await printEnvironment(environmentLines());
         if (state.phase === "scout") {
@@ -3738,13 +3768,15 @@ type WindowWithDeadwoodGame = Window & {
             state.pendingMessages.push("CAUSE: THIS FAR WEST, THE TRAIL ITSELF WEARS ON THE DRIVE. EVEN RESTED WEEKS FEED FEAR, BLIGHT, AND THE LOSS OF SANCTITY.");
         }
 
-        if (state.wardingOil > 0 && chance(30)) {
-            state.wardingOil -= 1;
-            affectCrew({ fear: -4 });
-            state.pendingMessages.push("WARDING OIL HOLDS THE RUST-MOTHS BACK FOR ONE MORE NIGHT.");
-        } else if (chance(30)) {
-            state.wagonCondition -= 8;
-            state.pendingMessages.push("CAUSE: RUST-MOTHS WORK THE IRON WHILE THE CAMP SLEEPS.");
+        if (chance(30)) {
+            if (state.wardingOil > 0) {
+                state.wardingOil -= 1;
+                affectCrew({ fear: -4 });
+                state.pendingMessages.push("WARDING OIL FLARES ALONG THE IRON AND DRIVES THE RUST-MOTHS OFF FOR ONE MORE NIGHT.");
+            } else {
+                state.wagonCondition -= 8;
+                state.pendingMessages.push("CAUSE: RUST-MOTHS WORK THE IRON WHILE THE CAMP SLEEPS.");
+            }
         }
 
         if (state.wagonCondition < 45) {
