@@ -115,6 +115,9 @@ Term.handleEnter = () => {
     Term.input = Term.input.replace(/(?:\\[rn])+/g, "");
 
     if (App.deadwood?.isActive?.()) {
+        if (Term.input.trim().length > 0) {
+            Term.pinPromptToTop?.();
+        }
         App.deadwood.handleInput(Term.input);
     } else if (App.wasm.isRunning) {
         if (Utils.isMobile() && Term.input.toLowerCase() === "exit") {

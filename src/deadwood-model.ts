@@ -334,7 +334,7 @@ namespace DeadwoodModel {
         return candidates.slice(0, Math.min(count, candidates.length));
     }
 
-    export function huntCleanChance(miles: number, occultHuntBonus: boolean, nightHuntPenalty: boolean): number {
+    export function huntShotChance(miles: number, occultHuntBonus: boolean, nightHuntPenalty: boolean): number {
         let chanceValue = 70;
 
         if (miles >= 520) {
@@ -354,6 +354,10 @@ namespace DeadwoodModel {
         }
 
         return clamp(chanceValue, 25, 90);
+    }
+
+    export function huntCleanChance(miles: number, occultHuntBonus: boolean, nightHuntPenalty: boolean): number {
+        return huntShotChance(miles, occultHuntBonus, nightHuntPenalty);
     }
 
     function taggedCowCount(herd: Cow[], tag: "injured" | "infected" | "traumatized" | "blighted"): number {

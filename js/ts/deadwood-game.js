@@ -10,6 +10,9 @@
     const WHISKEY_PRICE = 15;
     const GRAIN_PRICE = 20;
     const OIL_PRICE = 25;
+    const FULL_HUNT_AMMO = 8;
+    const FOOD_PER_HIT_MIN = 18;
+    const FOOD_PER_HIT_MAX = 30;
     const LANDMARKS = [
         {
             mile: 120,
@@ -86,6 +89,8 @@
     ];
     const state = createInitialState();
     let lastStatusSnapshot = null;
+    let debugMode = false;
+    let debugOverlayEl = null;
     function createInitialState() {
         const crew = createInitialCrew();
         const crewSummary = summarizeCrew(crew);
@@ -133,11 +138,13 @@
             cattleSkillMilestones: 0,
             damnedTradeCount: 0,
             recentCattleLossWeeks: 0,
+            lastHuntResult: null,
         };
     }
     function resetState() {
         Object.assign(state, createInitialState());
         lastStatusSnapshot = null;
+        syncDebugOverlay();
     }
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
@@ -147,6 +154,250 @@
     }
     function clampStat(value) {
         return clamp(value, 0, 100);
+    }
+    function ensureDebugOverlay() {
+        if (debugOverlayEl) {
+            return debugOverlayEl;
+        }
+        debugOverlayEl = document.createElement("div");
+        debugOverlayEl.id = "deadwood-debug-overlay";
+        debugOverlayEl.setAttribute("aria-hidden", "true");
+        document.body.appendChild(debugOverlayEl);
+        return debugOverlayEl;
+    }
+    function escapeHtml(value) {
+        return value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+    function signedValue(value) {
+        if (value > 0) {
+            return `+${value}`;
+        }
+        return `${value}`;
+    }
+    function debugBoolean(value) {
+        return value ? "YES" : "NO";
+    }
+    function countLivingCowsWhere(predicate) {
+        return livingCows().filter(predicate).length;
+    }
+    function describeCrewConsequence(outcome) {
+        if (!outcome) {
+            return "none";
+        }
+        const target = state.crew.find(member => member.id === outcome.targetId);
+        const targetName = target ? target.name : `CREW #${outcome.targetId}`;
+        if (outcome.type === "paranoia-purge") {
+            return `${outcome.type} -> ${targetName} (${outcome.cause}${outcome.fatal ? ", fatal" : ""})`;
+        }
+        if (outcome.type === "collapse") {
+            return `${outcome.type} -> ${targetName}${outcome.fatal ? " (fatal)" : ""}`;
+        }
+        return `${outcome.type} -> ${targetName}`;
+    }
+    function renderDebugRows(rows) {
+        return rows.map(([label, value]) => `<div class="deadwood-debug-row"><span class="deadwood-debug-key">${escapeHtml(label)}</span><span class="deadwood-debug-value">${escapeHtml(value)}</span></div>`).join("");
+    }
+    function renderDebugList(lines) {
+        if (lines.length === 0) {
+            return "";
+        }
+        return `<ul class="deadwood-debug-list">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
+    }
+    function renderHuntBulletRows(result) {
+        if (!result || result.bullets.length === 0) {
+            return '<div class="deadwood-debug-empty">NO HUNT RESOLVED YET.</div>';
+        }
+        return `
+            <div class="deadwood-debug-hunt-rows">
+                ${result.bullets.map(bullet => {
+            const outcome = !bullet.hit
+                ? "MISS"
+                : bullet.clean
+                    ? `HIT / CLEAN / ${bullet.food} FOOD`
+                    : `HIT / BLIGHTED / ${bullet.food} FOOD`;
+            return `
+                        <div class="deadwood-debug-hunt-row">
+                            <span class="deadwood-debug-hunt-shot">SHOT ${bullet.shot}</span>
+                            <span class="deadwood-debug-hunt-outcome">${escapeHtml(outcome)}</span>
+                        </div>
+                    `;
+        }).join("")}
+            </div>
+        `;
+    }
+    function renderCrewMemberInspector(members) {
+        return `
+            <div class="deadwood-debug-members">
+                ${members.map(member => {
+            const effectiveSkill = DeadwoodModel.effectiveCrewCattleSkill(member);
+            const status = member.alive ? "alive" : "gone";
+            return `
+                        <div class="deadwood-debug-member">
+                            <div class="deadwood-debug-member-name">${escapeHtml(member.name)} <span class="deadwood-debug-member-role">[${escapeHtml(member.role)}]</span></div>
+                            <div class="deadwood-debug-grid">
+                                ${renderDebugRows([
+                ["status", status],
+                ["health", `${member.health}`],
+                ["morale", `${member.morale}`],
+                ["fear", `${member.fear}`],
+                ["hunger", `${member.hunger}`],
+                ["loyalty", `${member.loyalty}`],
+                ["skill", `${member.cattleSkill} base / ${effectiveSkill} effective`],
+                ["guard duty", `${member.guardDutyCount}`],
+                ["food received", `${member.foodReceivedTotal.toFixed(1)}`],
+                ["whiskey received", `${member.whiskeyReceivedTotal}`],
+            ])}
+                            </div>
+                        </div>
+                    `;
+        }).join("")}
+            </div>
+        `;
+    }
+    function renderDebugCard(title, body, open = true) {
+        return `
+            <details class="deadwood-debug-card"${open ? " open" : ""}>
+                <summary class="deadwood-debug-card-summary">
+                    <span class="deadwood-debug-card-title">${escapeHtml(title)}</span>
+                    <span class="deadwood-debug-card-toggle">Toggle</span>
+                </summary>
+                <div class="deadwood-debug-card-body">${body}</div>
+            </details>
+        `;
+    }
+    function syncDebugOverlay() {
+        var _a, _b, _c, _d, _e;
+        if (!debugMode) {
+            if (debugOverlayEl) {
+                debugOverlayEl.innerHTML = "";
+            }
+            document.body.classList.remove("deadwood-debug-active");
+            return;
+        }
+        const overlay = ensureDebugOverlay();
+        document.body.classList.add("deadwood-debug-active");
+        const crewSummary = DeadwoodModel.summarizeCrew(state.crew);
+        const crewSignals = DeadwoodModel.crewWarningSignals(state.crew, state.cattle);
+        const crewConsequence = DeadwoodModel.assessCrewConsequence(state.crew, state.morale, state.fear);
+        const ambient = westwardAmbientPressure();
+        const averages = crewAverages();
+        const leader = findLivingLeader();
+        const living = livingCrew();
+        const injuredCount = countLivingCowsWhere(cow => cow.injured);
+        const infectedCount = countLivingCowsWhere(cow => cow.infected);
+        const traumatizedCount = countLivingCowsWhere(cow => cow.trauma >= 55);
+        const blightedCount = countLivingCowsWhere(cow => cow.condition === "blighted");
+        const maimedCount = countLivingCowsWhere(cow => cow.condition === "maimed");
+        const sickCount = countLivingCowsWhere(cow => cow.condition === "sick");
+        const topRisk = [...livingCows()]
+            .sort((left, right) => DeadwoodModel.cowRiskScore(right) - DeadwoodModel.cowRiskScore(left))
+            .slice(0, 3)
+            .map(cow => `#${cow.id} ${cow.condition.toUpperCase()} RISK ${DeadwoodModel.cowRiskScore(cow)}`);
+        const lastHunt = state.lastHuntResult;
+        const triggerLines = [
+            ...crewWarningMessages(),
+            ...herdWarningMessages(),
+        ];
+        overlay.innerHTML = `
+            <div class="deadwood-debug-shell">
+                <div class="deadwood-debug-header">
+                    <span class="deadwood-debug-title">Trail Inspector</span>
+                    <span class="deadwood-debug-badge">TEST</span>
+                </div>
+                ${renderDebugCard("Run", `
+                    <div class="deadwood-debug-grid">
+                        ${renderDebugRows([
+            ["state", state.active ? `${state.phase.toUpperCase()} / WEEK ${state.week}` : "ENDED"],
+            ["miles", `${state.miles}/${state.destinationMiles}`],
+            ["trade window", state.canTrade ? `${state.tradeLocation} / ${state.tradeTime}` : "closed"],
+            ["encounter", (_a = state.pendingEncounter) !== null && _a !== void 0 ? _a : "none"],
+            ["blighted food", `${state.pendingBlightedFood}`],
+            ["damned trades", `${state.damnedTradeCount}/3 used`],
+            ["recent cattle loss", `${state.recentCattleLossWeeks} week(s)`],
+            ["occultist", debugBoolean(state.hasOccultist)],
+            ["hunt bonus", debugBoolean(state.occultHuntBonus)],
+            ["night hunt penalty", debugBoolean(state.nightHuntPenalty)],
+        ])}
+                    </div>
+                `)}
+                ${renderDebugCard("Crew Hidden", `
+                    <div class="deadwood-debug-grid">
+                        ${renderDebugRows([
+            ["leader", leader ? leader.name : "none"],
+            ["living crew", `${living.length}/${state.crew.length}`],
+            ["avg hunger", `${averages.hunger}`],
+            ["avg loyalty", `${averages.loyalty}`],
+            ["base skill", `${crewSummary.baseCattleSkill}`],
+            ["effective skill", `${crewSummary.effectiveCattleSkill}`],
+            ["handling cap", `${crewSummary.handlingCapacity}`],
+            ["breaking hand", (_b = crewSignals.breakingMemberName) !== null && _b !== void 0 ? _b : "none"],
+            ["guard resentment", (_c = crewSignals.guardImbalanceName) !== null && _c !== void 0 ? _c : "none"],
+            ["portion resentment", (_d = crewSignals.portionImbalanceName) !== null && _d !== void 0 ? _d : "none"],
+            ["whiskey imbalance", debugBoolean(crewSignals.whiskeyImbalance)],
+            ["predicted consequence", describeCrewConsequence(crewConsequence)],
+        ])}
+                    </div>
+                    ${renderCrewMemberInspector(state.crew)}
+                `)}
+                ${renderDebugCard("Herd Hidden", `
+                    <div class="deadwood-debug-grid">
+                        ${renderDebugRows([
+            ["injured", `${injuredCount}`],
+            ["infected", `${infectedCount}`],
+            ["traumatized", `${traumatizedCount}`],
+            ["maimed", `${maimedCount}`],
+            ["sick", `${sickCount}`],
+            ["blighted", `${blightedCount}`],
+            ["over capacity", `${Math.max(0, state.cattle - crewSummary.handlingCapacity)}`],
+            ["composition", (_e = herdCompositionLine("later-trail")) !== null && _e !== void 0 ? _e : "none"],
+        ])}
+                    </div>
+                    ${renderDebugList(topRisk)}
+                `)}
+                ${renderDebugCard("Hunt", `
+                    <div class="deadwood-debug-grid">
+                        ${renderDebugRows([
+            ["mode", state.ammo > 0 ? "HUNT READY" : "OUT OF AMMO"],
+            ["next shot rate", `${huntShotChance()}%`],
+            ["next clean rate", `${huntCleanChance()}%`],
+            ["last bullets", lastHunt ? `${lastHunt.bulletsSpent}` : "none"],
+            ["last hits", lastHunt ? `${lastHunt.hits}` : "none"],
+            ["last clean food", lastHunt ? `${lastHunt.cleanFood}` : "none"],
+            ["last blighted food", lastHunt ? `${lastHunt.blightedFood}` : "none"],
+        ])}
+                    </div>
+                    ${lastHunt ? `
+                        <div class="deadwood-debug-hunt-rates">
+                            <span>LAST SHOT RATE ${escapeHtml(`${lastHunt.shotChance}%`)}</span>
+                            <span>LAST CLEAN RATE ${escapeHtml(`${lastHunt.cleanChance}%`)}</span>
+                        </div>
+                    ` : ""}
+                    ${renderHuntBulletRows(lastHunt)}
+                `)}
+                ${renderDebugCard("Triggers", `
+                    <div class="deadwood-debug-grid">
+                        ${renderDebugRows([
+            ["ambient zone", ambient.label],
+            ["ambient fear", signedValue(ambient.fear)],
+            ["ambient sanctity", signedValue(ambient.sanctity)],
+            ["ambient herd stress", signedValue(ambient.herdStress)],
+            ["ambient herd blight", signedValue(ambient.herdBlight)],
+            ["ration locked", debugBoolean(state.rationChangedThisWeek)],
+        ])}
+                    </div>
+                    ${renderDebugList(triggerLines.length > 0 ? triggerLines : ["No current hidden trigger warnings."])}
+                `)}
+            </div>
+        `;
+    }
+    function setDebugMode(nextDebugMode) {
+        debugMode = nextDebugMode;
+        syncDebugOverlay();
     }
     function createCow(id) {
         return {
@@ -237,6 +488,7 @@
         const summary = summarizeCrew();
         state.morale = summary.morale;
         state.fear = summary.fear;
+        syncDebugOverlay();
     }
     function crewHandlingCapacity() {
         return summarizeCrew().handlingCapacity;
@@ -507,6 +759,7 @@
         state.herdStress = summary.herdStress;
         state.herdFatigue = summary.herdFatigue;
         state.herdBlight = summary.herdBlight;
+        syncDebugOverlay();
     }
     function applyToLivingCows(effect) {
         for (const cow of livingCows()) {
@@ -912,6 +1165,7 @@
         await printSection("STATUS", statusLines());
         await printStatusWarnings();
         lastStatusSnapshot = snapshotStatus();
+        syncDebugOverlay();
     }
     async function printStatusWarnings() {
         if (state.phase === "outfit") {
@@ -999,12 +1253,20 @@
         await printSection("OUTFITTING", [`HOW MANY ${storeItemLabel(item)} DO YOU WANT TO BUY?`]);
         Term.prompt();
     }
-    async function printDayPrompt() {
-        const orders = ["TRAVEL", "HUNT", "REPAIR", "REST", "RATIONS"];
-        if (state.canTrade) {
-            orders.push("TRADE");
+    function availableDayCommands() {
+        const commands = ["travel"];
+        if (state.ammo > 0) {
+            commands.push("hunt");
         }
-        orders.push("SLAUGHTER", "STATUS", "HELP", "QUIT");
+        commands.push("repair", "rest", "rations");
+        if (state.canTrade) {
+            commands.push("trade");
+        }
+        commands.push("slaughter", "status", "help", "quit");
+        return commands;
+    }
+    async function printDayPrompt() {
+        const orders = availableDayCommands().map(command => command.toUpperCase());
         await printSection("ORDERS", [`TRAIL: ${orders.join(", ")}`]);
         await Term.writelns(`CURRENT RATIONS: ${rationLabel()}. ${state.rationChangedThisWeek ? "YOU HAVE ALREADY CHANGED THEM THIS WEEK." : 'TYPE "RATIONS" TO CHANGE THEM ONCE THIS WEEK.'}`);
         if (state.supplies < 4) {
@@ -1089,7 +1351,10 @@
         Term.prompt();
     }
     async function printBlightPrompt() {
-        await printSection("BLIGHT", ["THE MEAT IS BLIGHTED. TYPE FEED OR DISCARD."]);
+        await printSection("BLIGHT", [
+            `${state.pendingBlightedFood} FOOD IS BLIGHTED.`,
+            "TYPE TAKE TO KEEP THE BLIGHTED MEAT, OR LEAVE TO WALK AWAY FROM IT.",
+        ]);
         Term.prompt();
     }
     async function printEncounterPrompt() {
@@ -1179,6 +1444,82 @@
     function huntCleanChance() {
         return DeadwoodModel.huntCleanChance(state.miles, state.occultHuntBonus, state.nightHuntPenalty);
     }
+    function huntShotChance() {
+        return DeadwoodModel.huntShotChance(state.miles, state.occultHuntBonus, state.nightHuntPenalty);
+    }
+    function resolveHunt(bulletsSpent) {
+        const shotChance = huntShotChance();
+        const cleanChance = huntCleanChance();
+        let hits = 0;
+        let cleanFood = 0;
+        let blightedFood = 0;
+        const bullets = [];
+        for (let shot = 0; shot < bulletsSpent; shot += 1) {
+            const hit = chance(shotChance);
+            if (!hit) {
+                bullets.push({
+                    shot: shot + 1,
+                    hit: false,
+                    clean: null,
+                    food: 0,
+                });
+                continue;
+            }
+            hits += 1;
+            const food = randInt(FOOD_PER_HIT_MIN, FOOD_PER_HIT_MAX);
+            const clean = chance(cleanChance);
+            bullets.push({
+                shot: shot + 1,
+                hit: true,
+                clean,
+                food,
+            });
+            if (clean) {
+                cleanFood += food;
+            }
+            else {
+                blightedFood += food;
+            }
+        }
+        return { bulletsSpent, hits, cleanFood, blightedFood, shotChance, cleanChance, bullets };
+    }
+    async function resolveHuntAction(bulletsSpent) {
+        state.lastDayAction = "hunt";
+        state.ammo -= bulletsSpent;
+        affectHerd({ fatigue: -6, stress: -4, health: 1 });
+        const result = resolveHunt(bulletsSpent);
+        state.lastHuntResult = result;
+        const shotLabel = `${result.bulletsSpent} SHOT${result.bulletsSpent === 1 ? "" : "S"}`;
+        const hitLabel = `${result.hits} HEAD`;
+        state.occultHuntBonus = false;
+        syncDebugOverlay();
+        if (result.hits === 0) {
+            affectCrew({ morale: -2, fear: 2 });
+            await Term.writelns(`YOU FIRE ${shotLabel} INTO BAD COUNTRY AND BRING BACK NOTHING.`);
+            await transitionToRations();
+            return;
+        }
+        affectCrew({ morale: 2, hunger: -1 });
+        await Term.writelns(`YOU FIRE ${shotLabel} AND BRING DOWN ${hitLabel}.`);
+        if (result.cleanFood > 0) {
+            state.food += result.cleanFood;
+            await Term.writelns(`YOU DRESS AND STOW ${result.cleanFood} CLEAN FOOD.`);
+        }
+        if (result.blightedFood > 0) {
+            state.pendingBlightedFood = result.blightedFood;
+            state.phase = "blight";
+            if (result.cleanFood > 0) {
+                await Term.writelns(`ANOTHER ${result.blightedFood} FOOD IS BLIGHTED. YOU CAN TAKE IT TOO, OR LEAVE IT BEHIND.`);
+            }
+            else {
+                await Term.writelns(`NOTHING FROM THE KILL COMES BACK CLEAN. ${result.blightedFood} FOOD IS BLIGHTED.`);
+            }
+            await printBlightPrompt();
+            return;
+        }
+        await Term.writelns("THE HUNT GOES CLEAN.");
+        await transitionToRations();
+    }
     function herdLossRiskBonus() {
         let bonus = 0;
         if (state.herdStress >= 60)
@@ -1227,15 +1568,17 @@
                 return 0;
         }
     }
-    async function start() {
+    async function start(options) {
         if (state.active) {
             await Term.writelns(" DEADWOOD TRAIL IS ALREADY RUNNING.");
             Term.prompt();
             return;
         }
+        setDebugMode(Boolean(options === null || options === void 0 ? void 0 : options.debugMode));
         resetState();
         state.active = true;
         state.phase = "outfit";
+        syncDebugOverlay();
         Term.hidePrompt();
         Term.clearScreen();
         await printBlock([
@@ -1266,6 +1609,7 @@
         }
         state.active = false;
         state.phase = "ended";
+        syncDebugOverlay();
         await Term.writelns("");
         if (reason) {
             await Term.writelns(` ${reason}`);
@@ -1359,6 +1703,7 @@
                 await printEncounterPrompt();
                 break;
         }
+        syncDebugOverlay();
     }
     async function printHelp() {
         let lines = [];
@@ -1376,12 +1721,20 @@
         else if (state.phase === "day") {
             lines = [
                 "TRAVEL    - PUSH WEST AND ACCEPT A TRAIL EVENT",
-                "HUNT      - SPEND AMMO FOR FOOD; THE MEAT MAY BE BLIGHTED",
                 "REPAIR    - ENTER A REPAIR RITE TO RESTORE WAGON SANCTITY",
                 "REST      - SACRIFICE TIME FOR MORALE AND LOWER FEAR",
                 "RATIONS   - CHANGE HOW WELL THE CREW EATS THIS WEEK",
                 "SLAUGHTER - KILL 1 HEAD OF CATTLE FOR EMERGENCY FOOD",
             ];
+            if (state.ammo >= FULL_HUNT_AMMO) {
+                lines.splice(1, 0, "HUNT      - FIRE UP TO 8 SHOTS; CLEAN AND BLIGHTED MEAT ARE COUNTED SEPARATELY");
+            }
+            else if (state.ammo > 0) {
+                lines.splice(1, 0, "HUNT      - FIRE YOUR REMAINING SHOTS; CLEAN AND BLIGHTED MEAT ARE COUNTED SEPARATELY");
+            }
+            else {
+                lines.splice(1, 0, "HUNT      - REQUIRES AMMO");
+            }
             if (state.canTrade) {
                 lines.splice(5, 0, "TRADE     - ENTER THE MARKET WHEN A SAFE OR STRANGE POST IS OPEN");
             }
@@ -1427,8 +1780,8 @@
         }
         else if (state.phase === "blight") {
             lines = [
-                "FEED      - KEEP THE MEAT, RAISE FEAR",
-                "DISCARD   - LOSE THE FOOD, KEEP THE CREW CLEANER",
+                "TAKE      - KEEP THE BLIGHTED MEAT, RAISE FEAR",
+                "LEAVE     - WALK AWAY FROM THE BLIGHTED PORTION",
             ];
         }
         await printBlock(lines.concat(["STATUS    - REVIEW THE DRIVE", "QUIT      - RETURN TO THE TERMINAL"]));
@@ -1561,29 +1914,21 @@
             return;
         }
         if (input === "hunt") {
-            state.lastDayAction = "hunt";
-            if (state.ammo < 8) {
-                await Term.writelns("NOT ENOUGH AMMO TO HUNT WELL.");
+            if (state.ammo <= 0) {
+                await Term.writelns("YOU ARE OUT OF AMMO.");
                 await printDayPrompt();
                 return;
             }
-            const foodFound = randInt(90, 180);
-            const cleanChance = huntCleanChance();
-            state.ammo -= 8;
-            affectCrew({ morale: 2, hunger: -1 });
-            affectHerd({ fatigue: -6, stress: -4, health: 1 });
-            if (!chance(cleanChance)) {
-                state.pendingBlightedFood = foodFound;
-                state.phase = "blight";
-                await Term.writelns(`YOU BRING DOWN GOOD GAME, BUT THE FLESH IS WRONG. ${foodFound} FOOD IS AT STAKE. FEEDING IT WILL HIT YOUR MOST VULNERABLE CATTLE FIRST.`);
-                await printBlightPrompt();
-                state.occultHuntBonus = false;
+            await resolveHuntAction(Math.min(state.ammo, FULL_HUNT_AMMO));
+            return;
+        }
+        if (input === "desperate hunt" || input === "desperate") {
+            if (state.ammo <= 0) {
+                await Term.writelns("YOU ARE OUT OF AMMO.");
+                await printDayPrompt();
                 return;
             }
-            state.food += foodFound;
-            state.occultHuntBonus = false;
-            await Term.writelns(`THE HUNT GOES CLEAN. YOU GAIN ${foodFound} FOOD.`);
-            await transitionToRations();
+            await resolveHuntAction(state.ammo);
             return;
         }
         if (input === "repair") {
@@ -2098,7 +2443,7 @@
         await printNightPrompt();
     }
     async function handleBlightCommand(input) {
-        if (input === "feed") {
+        if (input === "take" || input === "feed") {
             state.food += state.pendingBlightedFood;
             affectCrew({ fear: 12, morale: -6, health: -1 });
             affectHerd({ blight: 5, stress: 6 });
@@ -2115,15 +2460,14 @@
             await transitionToRations();
             return;
         }
-        if (input === "discard") {
+        if (input === "leave" || input === "discard") {
             affectCrew({ morale: -4 });
-            affectHerd({ stress: -2 });
-            await Term.writelns("YOU DISCARD THE MEAT AND KEEP YOUR SCRUPLES.");
+            await Term.writelns("YOU LEAVE THE BLIGHTED MEAT WHERE IT LIES.");
             state.pendingBlightedFood = 0;
             await transitionToRations();
             return;
         }
-        await Term.writelns("TYPE FEED OR DISCARD.");
+        await Term.writelns("TYPE TAKE OR LEAVE.");
         await printBlightPrompt();
     }
     async function handleEncounterCommand(input) {
@@ -2815,11 +3159,7 @@
             ];
         }
         if (state.phase === "day") {
-            const options = ["travel", "hunt", "repair", "rest", "rations", "slaughter", "status", "help", "quit"];
-            if (state.canTrade) {
-                options.splice(5, 0, "trade");
-            }
-            return options;
+            return availableDayCommands();
         }
         if (state.phase === "repair") {
             return ["patch", "reinforce", "iron", "back", "status", "help", "quit"];
@@ -2845,7 +3185,7 @@
             return options;
         }
         if (state.phase === "blight") {
-            return ["feed", "discard", "status", "help", "quit"];
+            return ["take", "leave", "status", "help", "quit"];
         }
         if (state.phase === "encounter") {
             if (state.pendingEncounter === "salt-chapel") {

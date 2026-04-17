@@ -227,7 +227,7 @@ var DeadwoodModel;
         return candidates.slice(0, Math.min(count, candidates.length));
     }
     DeadwoodModel.chooseRemovalCandidates = chooseRemovalCandidates;
-    function huntCleanChance(miles, occultHuntBonus, nightHuntPenalty) {
+    function huntShotChance(miles, occultHuntBonus, nightHuntPenalty) {
         let chanceValue = 70;
         if (miles >= 520) {
             chanceValue -= 15;
@@ -245,6 +245,10 @@ var DeadwoodModel;
             chanceValue -= 5;
         }
         return clamp(chanceValue, 25, 90);
+    }
+    DeadwoodModel.huntShotChance = huntShotChance;
+    function huntCleanChance(miles, occultHuntBonus, nightHuntPenalty) {
+        return huntShotChance(miles, occultHuntBonus, nightHuntPenalty);
     }
     DeadwoodModel.huntCleanChance = huntCleanChance;
     function taggedCowCount(herd, tag) {

@@ -55,6 +55,26 @@ Term.getPromptText = () => {
     Term.promptText = promptText;
 }
 
+Term.pinPromptToTop = () => {
+    if (Term.promptPosition === undefined) {
+        return;
+    }
+
+    const line = Math.max(0, Term.getPromptPosition());
+    if (typeof Term.scrollToLine === "function") {
+        Term.scrollToLine(line);
+        return;
+    }
+
+    const buffer = Term.buffer?.active?._buffer;
+    if (!buffer) {
+        return;
+    }
+
+    buffer.ydisp = Math.max(0, Math.min(line, buffer.ybase));
+    Term.refresh(0, Term.rows - 1);
+};
+
 Term.clearScreen = () => {
     // \x1B[3J - Clear terminal screen and delete everything in the scrollback buffer
     // \x1B[H  - Move cursor to top left corner

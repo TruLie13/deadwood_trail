@@ -193,6 +193,7 @@ const Command = (() => {
         const normalized = input.toLowerCase();
         const commands = [
             "run deadwood",
+            "test deadwood",
             "clear",
             "crt",
             "help",
@@ -223,6 +224,15 @@ const Command = (() => {
             App.cmdrun = false;
             if (window.DeadwoodGame) {
                 window.DeadwoodGame.start();
+            } else {
+                await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
+                Term.prompt();
+            }
+            return;
+        } else if (cmd == "test deadwood") {
+            App.cmdrun = false;
+            if (window.DeadwoodGame) {
+                window.DeadwoodGame.start({ debugMode: true });
             } else {
                 await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
                 Term.prompt();
