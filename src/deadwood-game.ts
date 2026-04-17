@@ -9,7 +9,7 @@ declare const App: {
     deadwood: DeadwoodGameApi | null;
 };
 
-type Phase = "outfit" | "day" | "repair" | "trade" | "rations" | "night" | "blight" | "encounter" | "ended";
+type Phase = "outfit" | "day" | "repair" | "trade" | "rations" | "night" | "blight" | "encounter" | "scout" | "ended";
 type RationLevel = "poor" | "moderate" | "well";
 type DayAction = "travel" | "hunt" | "repair" | "rest" | "trade" | "slaughter" | null;
 type NightAction = "campfire" | "guard" | "whiskey" | "occultist" | "night" | "trade" | null;
@@ -17,6 +17,8 @@ type EncounterType = "ash-drowner" | "salt-chapel" | "hollow-drover" | null;
 type TradeTime = "day" | "night";
     type CowCondition = DeadwoodModel.CowCondition;
 type CrewRole = DeadwoodModel.CrewRole;
+type SpecialistRole = "hunter" | "scout" | "drover" | "hand";
+type ScoutRoutePlan = "face" | "detour" | null;
 type HuntBulletDebug = {
     shot: number;
     hit: boolean;
@@ -89,6 +91,9 @@ type GameState = {
     tradeTime: TradeTime;
     rationChangedThisWeek: boolean;
     pendingEncounter: EncounterType;
+    pendingScoutEncounter: EncounterType;
+    pendingScoutRoutePlan: ScoutRoutePlan;
+    pendingScoutDetourMiles: number;
     cattleSkillMilestones: number;
     damnedTradeCount: number;
     recentCattleLossWeeks: number;
@@ -118,6 +123,16 @@ type DeadwoodGameApi = {
     autocomplete: (input: string) => string | null;
 };
 
+type SpecialistPassiveStatus = {
+    week: number | null;
+    memberId: number | null;
+    eligible: boolean;
+    chance: number;
+    rolled: boolean;
+    success: boolean;
+    detail: string;
+};
+
 type WindowWithDeadwoodGame = Window & {
     DeadwoodGame?: DeadwoodGameApi;
 };
@@ -139,6 +154,10 @@ type WindowWithDeadwoodGame = Window & {
     const BACKUP_HUNT_SKILL_CAP = 76;
     const TRAPLINE_FOOD_MIN = 4;
     const TRAPLINE_FOOD_MAX = 8;
+    const DROVER_RECOVER_MIN = 1;
+    const DROVER_RECOVER_MAX = 2;
+    const HAND_REPAIR_MIN = 4;
+    const HAND_REPAIR_MAX = 7;
 
     const LANDMARKS: Landmark[] = [
         {
@@ -220,6 +239,7 @@ type WindowWithDeadwoodGame = Window & {
     let debugMode = false;
     let debugOverlayEl: HTMLDivElement | null = null;
     const debugCardOpenState: Record<string, boolean> = {};
+    let specialistPassiveStatus = createInitialSpecialistPassiveStatus();
 
     function createInitialState(): GameState {
         const crew = createInitialCrew();
@@ -266,6 +286,9 @@ type WindowWithDeadwoodGame = Window & {
             tradeTime: "day",
             rationChangedThisWeek: false,
             pendingEncounter: null,
+            pendingScoutEncounter: null,
+            pendingScoutRoutePlan: null,
+            pendingScoutDetourMiles: 0,
             cattleSkillMilestones: 0,
             damnedTradeCount: 0,
             recentCattleLossWeeks: 0,
@@ -273,9 +296,19 @@ type WindowWithDeadwoodGame = Window & {
         };
     }
 
+    function createInitialSpecialistPassiveStatus(): Record<SpecialistRole, SpecialistPassiveStatus> {
+        return {
+            hunter: { week: null, memberId: null, eligible: false, chance: 0, rolled: false, success: false, detail: "NO CHECK YET" },
+            scout: { week: null, memberId: null, eligible: false, chance: 0, rolled: false, success: false, detail: "NO CHECK YET" },
+            drover: { week: null, memberId: null, eligible: false, chance: 0, rolled: false, success: false, detail: "NO CHECK YET" },
+            hand: { week: null, memberId: null, eligible: false, chance: 0, rolled: false, success: false, detail: "NO CHECK YET" },
+        };
+    }
+
     function resetState() {
         Object.assign(state, createInitialState());
         lastStatusSnapshot = null;
+        specialistPassiveStatus = createInitialSpecialistPassiveStatus();
         syncDebugOverlay();
     }
 
@@ -390,6 +423,7 @@ type WindowWithDeadwoodGame = Window & {
                 ${members.map(member => {
                     const effectiveSkill = DeadwoodModel.effectiveCrewCattleSkill(member);
                     const status = member.alive ? "alive" : "gone";
+                    const specialistRows = renderSpecialistDebugRows(member);
                     return `
                         <div class="deadwood-debug-member">
                             <div class="deadwood-debug-member-name">${escapeHtml(member.name)} <span class="deadwood-debug-member-role">[${escapeHtml(member.role)}]</span></div>
@@ -406,6 +440,7 @@ type WindowWithDeadwoodGame = Window & {
                                     ["guard duty", `${member.guardDutyCount}`],
                                     ["food received", `${member.foodReceivedTotal.toFixed(1)}`],
                                     ["whiskey received", `${member.whiskeyReceivedTotal}`],
+                                    ...specialistRows,
                                 ])}
                             </div>
                         </div>
@@ -413,6 +448,77 @@ type WindowWithDeadwoodGame = Window & {
                 }).join("")}
             </div>
         `;
+    }
+
+    function specialistChance(member: CrewMember): number {
+        if (member.role === "hunter") {
+            return DeadwoodModel.hunterTraplineChance(member);
+        }
+
+        if (member.role === "scout") {
+            return DeadwoodModel.scoutTrailSenseChance(member);
+        }
+
+        if (member.role === "drover") {
+            return DeadwoodModel.droverHerdCareChance(member);
+        }
+
+        if (member.role === "hand") {
+            return DeadwoodModel.handMaintenanceChance(member);
+        }
+
+        return 0;
+    }
+
+    function specialistStatusFor(member: CrewMember): SpecialistPassiveStatus | null {
+        if (member.role === "hunter" || member.role === "scout" || member.role === "drover" || member.role === "hand") {
+            return specialistPassiveStatus[member.role];
+        }
+
+        return null;
+    }
+
+    function specialistCurrentLabel(member: CrewMember): string {
+        const passiveChance = specialistChance(member);
+        if (!member.alive) {
+            return "unavailable";
+        }
+
+        if (passiveChance <= 0) {
+            return "blocked";
+        }
+
+        return `${passiveChance}% eligible`;
+    }
+
+    function specialistLastCheckLabel(member: CrewMember): string {
+        const status = specialistStatusFor(member);
+        if (!status || status.week === null) {
+            return "none";
+        }
+
+        if (status.memberId !== member.id) {
+            return `W${status.week} checked another ${member.role}`;
+        }
+
+        if (!status.eligible) {
+            return `W${status.week} blocked`;
+        }
+
+        return `W${status.week} ${status.success ? "hit" : "miss"}`;
+    }
+
+    function renderSpecialistDebugRows(member: CrewMember): Array<[string, string]> {
+        if (member.role !== "hunter" && member.role !== "scout" && member.role !== "drover" && member.role !== "hand") {
+            return [];
+        }
+
+        const status = specialistStatusFor(member);
+        return [
+            ["weekly passive", specialistCurrentLabel(member)],
+            ["last passive check", specialistLastCheckLabel(member)],
+            ["last passive detail", status && status.memberId === member.id ? status.detail : "none"],
+        ];
     }
 
     function renderDebugCard(key: string, title: string, body: string, open = true): string {
@@ -478,6 +584,8 @@ type WindowWithDeadwoodGame = Window & {
                             ["miles", `${state.miles}/${state.destinationMiles}`],
                             ["trade window", state.canTrade ? `${state.tradeLocation} / ${state.tradeTime}` : "closed"],
                             ["encounter", state.pendingEncounter ?? "none"],
+                            ["scout warning", state.pendingScoutEncounter ?? "none"],
+                            ["scout route", state.pendingScoutRoutePlan ? `${state.pendingScoutRoutePlan}${state.pendingScoutRoutePlan === "detour" ? ` / -${state.pendingScoutDetourMiles} mi` : ""}` : "none"],
                             ["blighted stores", `${state.blightedFood}`],
                             ["pending blight", `${state.pendingBlightedFood}`],
                             ["damned trades", `${state.damnedTradeCount}/3 used`],
@@ -1652,11 +1760,31 @@ type WindowWithDeadwoodGame = Window & {
         const orders = availableDayCommands().map(command => command.toUpperCase());
         await printSection("ORDERS", [`TRAIL: ${orders.join(", ")}`]);
         await Term.writelns(`CURRENT RATIONS: ${rationLabel()}. ${state.rationChangedThisWeek ? "YOU HAVE ALREADY CHANGED THEM THIS WEEK." : 'TYPE "RATIONS" TO CHANGE THEM ONCE THIS WEEK.'}`);
+        if (state.pendingScoutEncounter && state.pendingScoutRoutePlan === "face") {
+            await Term.writelns(`SCOUT ROUTE: FACE ${scoutEncounterName(state.pendingScoutEncounter)} ON YOUR NEXT TRAVEL.`);
+        } else if (state.pendingScoutEncounter && state.pendingScoutRoutePlan === "detour") {
+            await Term.writelns(`SCOUT ROUTE: DETOUR AROUND ${scoutEncounterName(state.pendingScoutEncounter)}. NEXT TRAVEL LOSES ${state.pendingScoutDetourMiles} MILES.`);
+        }
         if (state.supplies < 4) {
             await Term.writelns("REPAIR OPTIONS REQUIRE SUPPLIES. YOU ARE SHORT ON MATERIALS.");
         } else {
             await Term.writelns("REPAIR LETS YOU RESTORE THE WAGON'S FRAME OR ITS SANCTITY.");
         }
+        Term.prompt();
+    }
+
+    async function printScoutPrompt() {
+        if (!state.pendingScoutEncounter) {
+            state.phase = "day";
+            await printDayPrompt();
+            return;
+        }
+
+        await printSection("SCOUT", [
+            `${designatedScout()?.name ?? "YOUR SCOUT"} FINDS SIGN OF ${scoutEncounterName(state.pendingScoutEncounter)} AHEAD.`,
+            "FACE IT   - KEEP THE DIRECT LINE AND MEET IT HEAD-ON",
+            `DETOUR    - SWING WIDE AND LOSE ${state.pendingScoutDetourMiles} MILES ON YOUR NEXT TRAVEL`,
+        ]);
         Term.prompt();
     }
 
@@ -1831,8 +1959,125 @@ type WindowWithDeadwoodGame = Window & {
         return livingCrew().find(member => member.role === "hunter");
     }
 
+    function designatedScout(): CrewMember | undefined {
+        return livingCrew().find(member => member.role === "scout");
+    }
+
+    function designatedDrover(): CrewMember | undefined {
+        return livingCrew().find(member => member.role === "drover");
+    }
+
+    function designatedHand(): CrewMember | undefined {
+        return livingCrew().find(member => member.role === "hand");
+    }
+
+    function recordSpecialistPassiveStatus(role: SpecialistRole, member: CrewMember | undefined, chanceValue: number, eligible: boolean, rolled: boolean, success: boolean, detail: string) {
+        specialistPassiveStatus[role] = {
+            week: state.week + 1,
+            memberId: member?.id ?? null,
+            eligible,
+            chance: chanceValue,
+            rolled,
+            success,
+            detail,
+        };
+        syncDebugOverlay();
+    }
+
     function huntFallbackPool(): CrewMember[] {
         return livingCrew().filter(member => member.role !== "hunter");
+    }
+
+    function scoutEncounterName(encounter: EncounterType): string {
+        if (encounter === "salt-chapel") {
+            return "THE SALT CHAPEL";
+        }
+
+        if (encounter === "ash-drowner") {
+            return "THE ASH-DROWNER";
+        }
+
+        if (encounter === "hollow-drover") {
+            return "THE HOLLOW DROVER";
+        }
+
+        return "TROUBLE";
+    }
+
+    function scoutForewarnedEncounter(): EncounterType {
+        if (state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45)) {
+            return "salt-chapel";
+        }
+
+        if (state.miles >= 520 && (state.fear >= 45 || state.herdStress >= 55 || state.wagonSanctity <= 55)) {
+            return "ash-drowner";
+        }
+
+        if (state.miles >= 310 && (state.recentCattleLossWeeks > 0 || state.herdStress >= 45 || state.fear >= 40)) {
+            return "hollow-drover";
+        }
+
+        return null;
+    }
+
+    function scoutDetourMiles(encounter: EncounterType): number {
+        if (encounter === "salt-chapel" || encounter === "ash-drowner") {
+            return randInt(20, 30);
+        }
+
+        if (encounter === "hollow-drover") {
+            return randInt(12, 20);
+        }
+
+        return 0;
+    }
+
+    function applyScoutFind(scout: CrewMember): { detail: string; message: string } {
+        const roll = Math.random();
+        if (roll < 0.7) {
+            const supplies = randInt(3, 6);
+            state.supplies += supplies;
+            return {
+                detail: `FOUND ${supplies} SUPPLIES`,
+                message: `SCOUT: ${scout.name} TURNS UP A HARDWARE CACHE OFF THE TRAIL. SUPPLIES +${supplies}.`,
+            };
+        }
+
+        if (roll < 0.85) {
+            state.wardingOil += 1;
+            return {
+                detail: "FOUND 1 WARDING OIL",
+                message: `SCOUT: ${scout.name} FINDS A SEALED BOTTLE OF WARDING OIL LEFT IN DRY SHADE. WARDING OIL +1.`,
+            };
+        }
+
+        state.blessedGrain += 1;
+        return {
+            detail: "FOUND 1 BLESSED GRAIN",
+            message: `SCOUT: ${scout.name} BRINGS BACK A SMALL SACK OF BLESSED GRAIN FROM A FORGOTTEN SHRINE. BLESSED GRAIN +1.`,
+        };
+    }
+
+    function clearScoutRoutePlan() {
+        state.pendingScoutEncounter = null;
+        state.pendingScoutRoutePlan = null;
+        state.pendingScoutDetourMiles = 0;
+    }
+
+    async function triggerEncounterByType(encounter: EncounterType) {
+        if (encounter === "salt-chapel") {
+            await saltChapelEncounter();
+            return;
+        }
+
+        if (encounter === "ash-drowner") {
+            await ashDrownerEncounter();
+            return;
+        }
+
+        if (encounter === "hollow-drover") {
+            await hollowDroverEncounter();
+        }
     }
 
     function chooseActingHunter(): { actor: CrewMember | null; fallbackShooter: boolean } {
@@ -1942,17 +2187,172 @@ type WindowWithDeadwoodGame = Window & {
     function resolveHunterTrapline(): void {
         const hunter = designatedHunter();
         if (!hunter) {
+            recordSpecialistPassiveStatus("hunter", undefined, 0, false, false, false, "NO HUNTER IN CREW");
             return;
         }
 
         const trapChance = DeadwoodModel.hunterTraplineChance(hunter);
-        if (trapChance <= 0 || !chance(trapChance)) {
+        if (trapChance <= 0) {
+            recordSpecialistPassiveStatus("hunter", hunter, trapChance, false, false, false, "BLOCKED BY CURRENT CONDITION");
+            return;
+        }
+
+        const triggered = chance(trapChance);
+        if (!triggered) {
+            recordSpecialistPassiveStatus("hunter", hunter, trapChance, true, true, false, `MISSED ${trapChance}% ROLL`);
             return;
         }
 
         const foodFound = randInt(TRAPLINE_FOOD_MIN, TRAPLINE_FOOD_MAX);
         state.food += foodFound;
+        recordSpecialistPassiveStatus("hunter", hunter, trapChance, true, true, true, `TRAPLINE BROUGHT IN ${foodFound} FOOD`);
         state.pendingMessages.push(`TRAPLINE: ${hunter.name} CHECKS THE SNARES AT FIRST LIGHT AND BRINGS IN ${foodFound} CLEAN FOOD.`);
+    }
+
+    function resolveScoutTrailSense(): void {
+        const scout = designatedScout();
+        if (!scout) {
+            recordSpecialistPassiveStatus("scout", undefined, 0, false, false, false, "NO SCOUT IN CREW");
+            return;
+        }
+
+        const trailChance = DeadwoodModel.scoutTrailSenseChance(scout);
+        if (trailChance <= 0) {
+            recordSpecialistPassiveStatus("scout", scout, trailChance, false, false, false, "BLOCKED BY CURRENT CONDITION");
+            return;
+        }
+
+        const triggered = chance(trailChance);
+        if (!triggered) {
+            recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, false, `MISSED ${trailChance}% ROLL`);
+            return;
+        }
+
+        if (!state.pendingScoutEncounter) {
+            const warnedEncounter = scoutForewarnedEncounter();
+            if (warnedEncounter) {
+                state.pendingScoutEncounter = warnedEncounter;
+                state.pendingScoutRoutePlan = null;
+                state.pendingScoutDetourMiles = scoutDetourMiles(warnedEncounter);
+                recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, true, `SPOTTED ${scoutEncounterName(warnedEncounter)}`);
+                return;
+            }
+        }
+
+        const find = applyScoutFind(scout);
+        recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, true, find.detail);
+        state.pendingMessages.push(find.message);
+    }
+
+    function droverReliefPriority(): "recover" | "stress" | "fatigue" | "blight" {
+        const recoverScore =
+            state.recentCattleLossWeeks > 0
+                ? 78 + Math.max(0, 500 - state.cattle) / 10
+                : 0;
+        const stressScore = state.herdStress + Math.max(0, state.herdFatigue - 40) / 3;
+        const fatigueScore = state.herdFatigue + Math.max(0, state.herdStress - 40) / 4;
+        const blightScore = state.herdBlight + Math.max(0, state.herdStress - 45) / 5;
+
+        const priorities = [
+            { kind: "recover" as const, score: recoverScore },
+            { kind: "stress" as const, score: stressScore },
+            { kind: "fatigue" as const, score: fatigueScore },
+            { kind: "blight" as const, score: blightScore },
+        ];
+
+        return [...priorities].sort((left, right) => right.score - left.score)[0].kind;
+    }
+
+    function resolveDroverHerdCare(): void {
+        const drover = designatedDrover();
+        if (!drover) {
+            recordSpecialistPassiveStatus("drover", undefined, 0, false, false, false, "NO DROVER IN CREW");
+            return;
+        }
+
+        const careChance = DeadwoodModel.droverHerdCareChance(drover);
+        if (careChance <= 0) {
+            recordSpecialistPassiveStatus("drover", drover, careChance, false, false, false, "BLOCKED BY CURRENT CONDITION");
+            return;
+        }
+
+        const triggered = chance(careChance);
+        if (!triggered) {
+            recordSpecialistPassiveStatus("drover", drover, careChance, true, true, false, `MISSED ${careChance}% ROLL`);
+            return;
+        }
+
+        const priority = droverReliefPriority();
+        if (priority === "recover") {
+            const recovered = addRecoveredCattle(randInt(DROVER_RECOVER_MIN, DROVER_RECOVER_MAX), false);
+            if (recovered > 0) {
+                state.recentCattleLossWeeks = 0;
+                affectHerd({ stress: -4, fatigue: -2 });
+                recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, `RECOVERED ${recovered} LOST CATTLE`);
+                state.pendingMessages.push(`DROVER: ${drover.name} FINDS ${recovered} STRAY HEAD AT FIRST LIGHT AND WALKS THEM BACK INTO THE DRIVE.`);
+            } else {
+                recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, "FOUND NO STRAYS TO BRING BACK");
+            }
+            return;
+        }
+
+        if (priority === "blight") {
+            const relieved = relieveInfectedCattle(percentOfHerd(6), 7);
+            affectHerd({ blight: -2, stress: -2, health: 1 });
+            recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, relieved > 0 ? `STABILIZED ${relieved} SICKER CATTLE` : "WORKED THE SICKER EDGE OF THE HERD");
+            state.pendingMessages.push(`DROVER: ${drover.name} WORKS THE SICKER EDGE OF THE HERD UNTIL THE LINE STEADIES${relieved > 0 ? " AND SOME OF THE WORST STOCK CLEARS A LITTLE" : ""}.`);
+            return;
+        }
+
+        if (priority === "fatigue") {
+            affectHerd({ fatigue: -8, stress: -3, health: 2 });
+            recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, "REDUCED HERD FATIGUE");
+            state.pendingMessages.push(`DROVER: ${drover.name} SETS AN EASIER PACE BEFORE DAWN AND TAKES SOME OF THE WEAR OFF THE HERD.`);
+            return;
+        }
+
+        const calmed = calmTraumatizedCattle(percentOfHerd(10), 10);
+        affectHerd({ stress: -6, fatigue: -2 });
+        recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, calmed > 0 ? `CALMED ${calmed} SKITTISH CATTLE` : "REDUCED HERD STRESS");
+        state.pendingMessages.push(`DROVER: ${drover.name} RIDES THE NERVOUS EDGE OF THE DRIVE UNTIL IT QUIETS${calmed > 0 ? " AND THE WORST OF THE SKITTISHNESS BREAKS" : ""}.`);
+    }
+
+    function resolveHandMaintenance(): void {
+        const hand = designatedHand();
+        if (!hand) {
+            recordSpecialistPassiveStatus("hand", undefined, 0, false, false, false, "NO HAND IN CREW");
+            return;
+        }
+
+        const maintenanceChance = DeadwoodModel.handMaintenanceChance(hand);
+        if (maintenanceChance <= 0) {
+            recordSpecialistPassiveStatus("hand", hand, maintenanceChance, false, false, false, "BLOCKED BY CURRENT CONDITION");
+            return;
+        }
+
+        const triggered = chance(maintenanceChance);
+        if (!triggered) {
+            recordSpecialistPassiveStatus("hand", hand, maintenanceChance, true, true, false, `MISSED ${maintenanceChance}% ROLL`);
+            return;
+        }
+
+        let repair = randInt(HAND_REPAIR_MIN, HAND_REPAIR_MAX);
+        if (state.wagonCondition <= 45) {
+            repair += 2;
+        } else if (state.wagonCondition <= 65) {
+            repair += 1;
+        }
+
+        state.wagonCondition += repair;
+        recordSpecialistPassiveStatus("hand", hand, maintenanceChance, true, true, true, `REPAIRED ${repair} WAGON STRUCTURE`);
+        state.pendingMessages.push(`HAND: ${hand.name} PATCHES THE FRAME AND TIGHTENS THE IRON. WAGON STRUCTURE +${repair}.`);
+    }
+
+    function resolveCrewRolePassives(): void {
+        resolveHunterTrapline();
+        resolveScoutTrailSense();
+        resolveDroverHerdCare();
+        resolveHandMaintenance();
     }
 
     function huntCleanChance(): number {
@@ -2245,6 +2645,11 @@ type WindowWithDeadwoodGame = Window & {
 
         if (state.phase === "encounter") {
             await handleEncounterCommand(input);
+            return;
+        }
+
+        if (state.phase === "scout") {
+            await handleScoutCommand(input);
         }
     }
 
@@ -2277,6 +2682,9 @@ type WindowWithDeadwoodGame = Window & {
                 break;
             case "encounter":
                 await printEncounterPrompt();
+                break;
+            case "scout":
+                await printScoutPrompt();
                 break;
         }
         syncDebugOverlay();
@@ -2346,6 +2754,11 @@ type WindowWithDeadwoodGame = Window & {
                 "WARD      - SACRIFICE CATTLE TO STRENGTHEN THE DRIVE",
                 "PROVENDER - SACRIFICE CATTLE FOR FOOD AND MATERIALS",
                 "REFUSE    - KEEP THE HERD AND TAKE THE CONSEQUENCES",
+            ];
+        } else if (state.phase === "scout") {
+            lines = [
+                "FACE IT   - TAKE THE DIRECT LINE INTO THE THING YOUR SCOUT SPOTTED",
+                "DETOUR    - LOSE MILES TO GO AROUND IT",
             ];
         } else if (state.phase === "blight") {
             lines = [
@@ -2475,7 +2888,12 @@ type WindowWithDeadwoodGame = Window & {
         if (input === "travel") {
             state.lastDayAction = "travel";
             state.occultHuntBonus = false;
-            const miles = travelMiles(55, 95);
+            const plannedEncounter = state.pendingScoutRoutePlan === "face" ? state.pendingScoutEncounter : null;
+            const detourPenalty = state.pendingScoutRoutePlan === "detour" ? state.pendingScoutDetourMiles : 0;
+            let miles = travelMiles(55, 95);
+            if (detourPenalty > 0) {
+                miles = Math.max(12, miles - detourPenalty);
+            }
             const wear = randInt(3, 7);
             const fearGain = 2;
             state.miles += miles;
@@ -2488,7 +2906,18 @@ type WindowWithDeadwoodGame = Window & {
             });
             await Term.writelns(`YOU PUSH THE DRIVE FORWARD AND COVER ${miles} MILES THIS WEEK.`);
             await Term.writelns(travelWearLine(wear, fearGain));
-            await trailEvent();
+            if (detourPenalty > 0 && state.pendingScoutEncounter) {
+                await Term.writelns(`YOU TAKE THE LONGER LINE AND GIVE ${scoutEncounterName(state.pendingScoutEncounter)} A WIDE BERTH.`);
+            }
+
+            if (plannedEncounter) {
+                clearScoutRoutePlan();
+                await triggerEncounterByType(plannedEncounter);
+            } else {
+                const blockedEncounter = state.pendingScoutRoutePlan === "detour" ? state.pendingScoutEncounter : null;
+                clearScoutRoutePlan();
+                await trailEvent(blockedEncounter);
+            }
             if (state.phase === "encounter") {
                 return;
             }
@@ -2594,6 +3023,33 @@ type WindowWithDeadwoodGame = Window & {
 
         await Term.writelns("UNKNOWN ORDER.");
         await printDayPrompt();
+    }
+
+    async function handleScoutCommand(input: string) {
+        if (!state.pendingScoutEncounter) {
+            state.phase = "day";
+            await printDayPrompt();
+            return;
+        }
+
+        if (input === "face it" || input === "face") {
+            state.pendingScoutRoutePlan = "face";
+            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(state.pendingScoutEncounter)} HEAD-ON.`);
+            state.phase = "day";
+            await printDayPrompt();
+            return;
+        }
+
+        if (input === "detour" || input === "long way") {
+            state.pendingScoutRoutePlan = "detour";
+            await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${state.pendingScoutDetourMiles} MILES BUT AVOIDS ${scoutEncounterName(state.pendingScoutEncounter)}.`);
+            state.phase = "day";
+            await printDayPrompt();
+            return;
+        }
+
+        await Term.writelns("TYPE FACE IT OR DETOUR.");
+        await printScoutPrompt();
     }
 
     async function enterTrade() {
@@ -3221,7 +3677,7 @@ type WindowWithDeadwoodGame = Window & {
         resolveNightDecay();
         resolveCrewConsequences();
         normalizeState();
-        resolveHunterTrapline();
+        resolveCrewRolePassives();
         normalizeState();
         if (await evaluateEndings()) {
             return;
@@ -3230,10 +3686,14 @@ type WindowWithDeadwoodGame = Window & {
         state.week += 1;
         state.recentCattleLossWeeks = Math.max(0, state.recentCattleLossWeeks - 1);
         state.rationChangedThisWeek = false;
-        state.phase = "day";
+        state.phase = state.pendingScoutEncounter && !state.pendingScoutRoutePlan ? "scout" : "day";
         await printStatus();
         await printEnvironment(environmentLines());
-        await printDayPrompt();
+        if (state.phase === "scout") {
+            await printScoutPrompt();
+        } else {
+            await printDayPrompt();
+        }
     }
 
     function normalizeState() {
@@ -3248,6 +3708,7 @@ type WindowWithDeadwoodGame = Window & {
         state.wardingOil = Math.max(0, state.wardingOil);
         state.cash = Math.max(0, state.cash);
         state.pendingBlightedFood = Math.max(0, state.pendingBlightedFood);
+        state.pendingScoutDetourMiles = Math.max(0, state.pendingScoutDetourMiles);
         syncCrewSummary();
         syncHerdSummary();
     }
@@ -3289,6 +3750,16 @@ type WindowWithDeadwoodGame = Window & {
         if (state.wagonCondition < 45) {
             state.wagonSanctity -= 3;
             state.pendingMessages.push("CAUSE: THE FRAME IS DAMAGED ENOUGH THAT THE WAGON CAN NO LONGER HOLD ITS WARDS AS WELL.");
+        }
+
+        if (!designatedDrover()) {
+            affectHerd({ stress: 4, fatigue: 3, health: -1 });
+            state.pendingMessages.push("CAUSE: WITH NO TRUE DROVER LEFT, THE HERD STARTS LOSING DISCIPLINE EVEN ON QUIETER WEEKS.");
+        }
+
+        if (!designatedHand()) {
+            state.wagonCondition -= 5;
+            state.pendingMessages.push("CAUSE: WITH NO TRUE HAND LEFT, BOLTS LOOSEN, WOOD WARPS, AND THE WAGON WEARS FASTER.");
         }
 
         if (state.wagonSanctity < 50) {
@@ -3399,7 +3870,7 @@ type WindowWithDeadwoodGame = Window & {
         resolveCowTags();
     }
 
-    async function trailEvent() {
+    async function trailEvent(blockedEncounter: EncounterType = null) {
         const location = locationName();
 
         if (location === "SAN ANTONIO" || state.miles < 120) {
@@ -3425,11 +3896,11 @@ type WindowWithDeadwoodGame = Window & {
             }
         }
 
-        if (state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45) && chance(16)) {
+        if (blockedEncounter !== "salt-chapel" && state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45) && chance(16)) {
             await saltChapelEncounter();
-        } else if (state.miles >= 520 && (state.fear >= 45 || state.herdStress >= 55 || state.wagonSanctity <= 55) && chance(18)) {
+        } else if (blockedEncounter !== "ash-drowner" && state.miles >= 520 && (state.fear >= 45 || state.herdStress >= 55 || state.wagonSanctity <= 55) && chance(18)) {
             await ashDrownerEncounter();
-        } else if (state.miles >= 310 && (state.recentCattleLossWeeks > 0 || state.herdStress >= 45 || state.fear >= 40) && chance(12)) {
+        } else if (blockedEncounter !== "hollow-drover" && state.miles >= 310 && (state.recentCattleLossWeeks > 0 || state.herdStress >= 45 || state.fear >= 40) && chance(12)) {
             await hollowDroverEncounter();
         } else if (chance(22)) {
             await bloodRainEvent();
@@ -3848,6 +4319,10 @@ type WindowWithDeadwoodGame = Window & {
                 return ["follow", "bargain", "drive off", "drive", "status", "help", "quit"];
             }
             return ["passage", "ward", "provender", "refuse", "status", "help", "quit"];
+        }
+
+        if (state.phase === "scout") {
+            return ["face it", "face", "detour", "long way", "status", "help", "quit"];
         }
 
         return [];

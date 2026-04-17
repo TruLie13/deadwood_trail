@@ -128,6 +128,27 @@ test('hunterTraplineChance rewards a steady hunter and shuts down when the hunte
   assert.equal(DeadwoodModel.hunterTraplineChance(brokenHunter), 0);
 });
 
+test('scoutTrailSenseChance rewards a steady scout and shuts down when the scout is broken', () => {
+  const steadyScout = makeCrewMember(1, { role: 'scout', morale: 78, fear: 18, health: 82, hunger: 20 });
+  const brokenScout = makeCrewMember(2, { role: 'scout', morale: 20, fear: 90, health: 28, hunger: 82 });
+  assert.equal(DeadwoodModel.scoutTrailSenseChance(steadyScout), 26);
+  assert.equal(DeadwoodModel.scoutTrailSenseChance(brokenScout), 0);
+});
+
+test('droverHerdCareChance rewards a steady drover and shuts down when the drover is broken', () => {
+  const steadyDrover = makeCrewMember(1, { role: 'drover', morale: 78, fear: 18, health: 82, hunger: 20 });
+  const brokenDrover = makeCrewMember(2, { role: 'drover', morale: 20, fear: 90, health: 28, hunger: 82 });
+  assert.equal(DeadwoodModel.droverHerdCareChance(steadyDrover), 24);
+  assert.equal(DeadwoodModel.droverHerdCareChance(brokenDrover), 0);
+});
+
+test('handMaintenanceChance rewards a steady hand and shuts down when the hand is broken', () => {
+  const steadyHand = makeCrewMember(1, { role: 'hand', morale: 76, fear: 18, health: 81, hunger: 20 });
+  const brokenHand = makeCrewMember(2, { role: 'hand', morale: 20, fear: 90, health: 28, hunger: 82 });
+  assert.equal(DeadwoodModel.handMaintenanceChance(steadyHand), 27);
+  assert.equal(DeadwoodModel.handMaintenanceChance(brokenHand), 0);
+});
+
 test('herdCompositionLine reports infected later-trail herd composition', () => {
   const herd = [
     ...Array.from({ length: 7 }, (_, index) => makeCow(index, { infected: true, blight: 50, condition: 'blighted' })),

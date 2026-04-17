@@ -202,6 +202,126 @@ namespace DeadwoodModel {
         return clamp(chanceValue, 0, 30);
     }
 
+    export function droverHerdCareChance(member: CrewMember): number {
+        if (!member.alive || member.role !== "drover") {
+            return 0;
+        }
+
+        if (member.health <= 30 || member.fear >= 88) {
+            return 0;
+        }
+
+        let chanceValue = 9;
+
+        if (member.morale >= 75) {
+            chanceValue += 11;
+        } else if (member.morale >= 60) {
+            chanceValue += 7;
+        } else if (member.morale >= 45) {
+            chanceValue += 3;
+        }
+
+        if (member.health >= 80) {
+            chanceValue += 4;
+        } else if (member.health >= 64) {
+            chanceValue += 2;
+        }
+
+        if (member.fear >= 70) {
+            chanceValue -= 8;
+        } else if (member.fear >= 50) {
+            chanceValue -= 4;
+        }
+
+        if (member.hunger >= 75) {
+            chanceValue -= 6;
+        } else if (member.hunger >= 55) {
+            chanceValue -= 3;
+        }
+
+        return clamp(chanceValue, 0, 28);
+    }
+
+    export function handMaintenanceChance(member: CrewMember): number {
+        if (!member.alive || member.role !== "hand") {
+            return 0;
+        }
+
+        if (member.health <= 30 || member.fear >= 88) {
+            return 0;
+        }
+
+        let chanceValue = 11;
+
+        if (member.morale >= 75) {
+            chanceValue += 12;
+        } else if (member.morale >= 60) {
+            chanceValue += 7;
+        } else if (member.morale >= 45) {
+            chanceValue += 3;
+        }
+
+        if (member.health >= 80) {
+            chanceValue += 4;
+        } else if (member.health >= 64) {
+            chanceValue += 2;
+        }
+
+        if (member.fear >= 70) {
+            chanceValue -= 8;
+        } else if (member.fear >= 50) {
+            chanceValue -= 4;
+        }
+
+        if (member.hunger >= 75) {
+            chanceValue -= 6;
+        } else if (member.hunger >= 55) {
+            chanceValue -= 3;
+        }
+
+        return clamp(chanceValue, 0, 30);
+    }
+
+    export function scoutTrailSenseChance(member: CrewMember): number {
+        if (!member.alive || member.role !== "scout") {
+            return 0;
+        }
+
+        if (member.health <= 30 || member.fear >= 88) {
+            return 0;
+        }
+
+        let chanceValue = 10;
+
+        if (member.morale >= 75) {
+            chanceValue += 12;
+        } else if (member.morale >= 60) {
+            chanceValue += 7;
+        } else if (member.morale >= 45) {
+            chanceValue += 3;
+        }
+
+        if (member.health >= 80) {
+            chanceValue += 4;
+        } else if (member.health >= 64) {
+            chanceValue += 2;
+        }
+
+        if (member.fear >= 70) {
+            chanceValue -= 8;
+        } else if (member.fear >= 50) {
+            chanceValue -= 4;
+        }
+
+        if (member.hunger >= 75) {
+            chanceValue -= 6;
+        } else if (member.hunger >= 55) {
+            chanceValue -= 3;
+        }
+
+        return clamp(chanceValue, 0, 30);
+    }
+
     export function crewHandlingContribution(member: CrewMember): number {
         const leaderBonus = member.isLeader ? 1.08 : 1;
         return Math.round(effectiveCrewCattleSkill(member) * leaderBonus);
