@@ -95,11 +95,409 @@
         },
     ];
     const state = createInitialState();
+    const root = window;
     let lastStatusSnapshot = null;
     let debugMode = false;
     let debugOverlayEl = null;
     const debugCardOpenState = {};
     let specialistPassiveStatus = createInitialSpecialistPassiveStatus();
+    let currentRunReport = null;
+    let runResolution = null;
+    const capturedSnapshotKeys = new Set();
+    function incrementCounter(record, key, amount = 1) {
+        var _a;
+        record[key] = ((_a = record[key]) !== null && _a !== void 0 ? _a : 0) + amount;
+    }
+    function createRunId() {
+        return `${new Date().toISOString().replace(/[:.]/g, "-")}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+    function createCrewSnapshot(member) {
+        return {
+            id: member.id,
+            name: member.name,
+            role: member.role,
+            alive: member.alive,
+            isLeader: member.isLeader,
+            fear: member.fear,
+            morale: member.morale,
+            hunger: member.hunger,
+            health: member.health,
+            loyalty: member.loyalty,
+            cattleSkill: member.cattleSkill,
+            huntSkill: member.huntSkill,
+            guardDutyCount: member.guardDutyCount,
+            foodReceivedTotal: Number(member.foodReceivedTotal.toFixed(2)),
+            whiskeyReceivedTotal: member.whiskeyReceivedTotal,
+        };
+    }
+    function createSpecialistCounterMap() {
+        return {
+            hunter: { checks: 0, eligibleChecks: 0, successes: 0, extraValue: 0 },
+            scout: { checks: 0, eligibleChecks: 0, successes: 0, extraValue: 0 },
+            drover: { checks: 0, eligibleChecks: 0, successes: 0, extraValue: 0 },
+            hand: { checks: 0, eligibleChecks: 0, successes: 0, extraValue: 0 },
+        };
+    }
+    function createEmptyRunReport() {
+        return {
+            schemaVersion: 1,
+            game: "deadwood-trail",
+            runId: createRunId(),
+            mode: debugMode ? "test" : "normal",
+            startedAt: new Date().toISOString(),
+            endedAt: null,
+            durationMs: null,
+            summary: {
+                outcome: null,
+                failureCause: null,
+                weekEnded: state.week,
+                milesReached: state.miles,
+                destinationMiles: state.destinationMiles,
+                cattleRemaining: state.cattle,
+                crewAlive: livingCrew().length,
+                crewDead: 0,
+                crewExiled: 0,
+                crewDeserted: 0,
+                foodRemaining: state.food,
+                blightedFoodRemaining: state.blightedFood,
+                ammoRemaining: state.ammo,
+                suppliesRemaining: state.supplies,
+                cashRemaining: state.cash,
+                morale: state.morale,
+                fear: state.fear,
+                wagonCondition: state.wagonCondition,
+                wagonSanctity: state.wagonSanctity,
+                landmarksReached: [...state.reachedLandmarks],
+            },
+            counters: {
+                dayActions: { travel: 0, hunt: 0, repair: 0, rest: 0, trade: 0, slaughter: 0 },
+                nightActions: { campfire: 0, guard: 0, whiskey: 0, occultist: 0, night: 0, trade: 0 },
+                rationChoices: { poor: 0, moderate: 0, well: 0 },
+                blight: { found: 0, taken: 0, left: 0, consumed: 0, contaminated: 0 },
+                hunt: { attempts: 0, fallbackAttempts: 0, shotsFired: 0, hits: 0, cleanFood: 0, blightedFood: 0 },
+                scout: { warnings: 0, finds: 0, faced: 0, detoured: 0 },
+                specialists: createSpecialistCounterMap(),
+                crewConsequences: {
+                    mutiny: 0,
+                    guardExile: 0,
+                    foodExile: 0,
+                    whiskeyDesertion: 0,
+                    paranoiaDeath: 0,
+                    paranoiaExile: 0,
+                    collapseDeath: 0,
+                    collapseDesertion: 0,
+                },
+                cattleLosses: {
+                    total: 0,
+                    byCause: {
+                        slaughter: 0,
+                        "campfire-stampede": 0,
+                        "night-panic": 0,
+                        "night-collapse": 0,
+                        stampede: 0,
+                        "damned-trade": 0,
+                        "ash-drowner-encounter": 0,
+                        "salt-chapel-encounter": 0,
+                        "hollow-drover-encounter": 0,
+                        "scout-warning": 0,
+                        event: 0,
+                        unknown: 0,
+                    },
+                },
+                cattleRecovered: {
+                    total: 0,
+                    byCause: { "drover-passive": 0, "hollow-drover-follow": 0, unknown: 0 },
+                    wrongRecovered: 0,
+                },
+                events: {},
+                encounterChoices: {},
+            },
+            peaks: {
+                maxFear: state.fear,
+                minMorale: state.morale,
+                maxCrewHunger: Math.max(...state.crew.map(member => member.hunger)),
+                minCrewHealth: Math.min(...state.crew.map(member => member.health)),
+                minWagonCondition: state.wagonCondition,
+                minWagonSanctity: state.wagonSanctity,
+                minHerdHealth: state.herdHealth,
+                maxHerdStress: state.herdStress,
+                maxHerdFatigue: state.herdFatigue,
+                maxHerdBlight: state.herdBlight,
+                minCattle: state.cattle,
+            },
+            crew: {
+                start: state.crew.map(createCrewSnapshot),
+                end: [],
+                losses: [],
+            },
+            cattleLossHistory: [],
+            specialists: { hunter: [], scout: [], drover: [], hand: [] },
+            actions: [],
+            events: [],
+            snapshots: [],
+            persistence: {
+                attempted: false,
+                saved: false,
+                filePath: null,
+                error: null,
+            },
+        };
+    }
+    function publishRunReportState() {
+        var _a;
+        root.DeadwoodTrailReports = (_a = root.DeadwoodTrailReports) !== null && _a !== void 0 ? _a : {
+            currentRun: null,
+            lastCompletedRun: null,
+            savePaths: [],
+        };
+        root.DeadwoodTrailReports.currentRun = currentRunReport ? JSON.parse(JSON.stringify(currentRunReport)) : null;
+    }
+    function initializeRunReport() {
+        capturedSnapshotKeys.clear();
+        runResolution = null;
+        currentRunReport = createEmptyRunReport();
+        captureRunSnapshot("week-start");
+        publishRunReportState();
+    }
+    function updateRunPeaks() {
+        if (!currentRunReport) {
+            return;
+        }
+        const hungerValues = state.crew.map(member => member.hunger);
+        const healthValues = state.crew.map(member => member.health);
+        currentRunReport.peaks.maxFear = Math.max(currentRunReport.peaks.maxFear, state.fear);
+        currentRunReport.peaks.minMorale = Math.min(currentRunReport.peaks.minMorale, state.morale);
+        currentRunReport.peaks.maxCrewHunger = Math.max(currentRunReport.peaks.maxCrewHunger, ...hungerValues);
+        currentRunReport.peaks.minCrewHealth = Math.min(currentRunReport.peaks.minCrewHealth, ...healthValues);
+        currentRunReport.peaks.minWagonCondition = Math.min(currentRunReport.peaks.minWagonCondition, state.wagonCondition);
+        currentRunReport.peaks.minWagonSanctity = Math.min(currentRunReport.peaks.minWagonSanctity, state.wagonSanctity);
+        currentRunReport.peaks.minHerdHealth = Math.min(currentRunReport.peaks.minHerdHealth, state.herdHealth);
+        currentRunReport.peaks.maxHerdStress = Math.max(currentRunReport.peaks.maxHerdStress, state.herdStress);
+        currentRunReport.peaks.maxHerdFatigue = Math.max(currentRunReport.peaks.maxHerdFatigue, state.herdFatigue);
+        currentRunReport.peaks.maxHerdBlight = Math.max(currentRunReport.peaks.maxHerdBlight, state.herdBlight);
+        currentRunReport.peaks.minCattle = Math.min(currentRunReport.peaks.minCattle, state.cattle);
+    }
+    function captureRunSnapshot(label) {
+        if (!currentRunReport) {
+            return;
+        }
+        const snapshotKey = `${state.week}:${label}`;
+        if (capturedSnapshotKeys.has(snapshotKey)) {
+            return;
+        }
+        capturedSnapshotKeys.add(snapshotKey);
+        currentRunReport.snapshots.push({
+            week: state.week,
+            phase: state.phase,
+            label,
+            miles: state.miles,
+            cattle: state.cattle,
+            crewAlive: livingCrew().length,
+            food: state.food,
+            blightedFood: state.blightedFood,
+            ammo: state.ammo,
+            supplies: state.supplies,
+            cash: state.cash,
+            morale: state.morale,
+            fear: state.fear,
+            wagonCondition: state.wagonCondition,
+            wagonSanctity: state.wagonSanctity,
+            herdHealth: state.herdHealth,
+            herdStress: state.herdStress,
+            herdFatigue: state.herdFatigue,
+            herdBlight: state.herdBlight,
+            rationLevel: state.rationLevel,
+        });
+    }
+    function recordAction(phase, action, detail = "") {
+        if (!currentRunReport) {
+            return;
+        }
+        currentRunReport.actions.push({
+            week: state.week,
+            phase,
+            action,
+            detail,
+        });
+    }
+    function recordEvent(key, title, detail = "", phase = "system") {
+        if (!currentRunReport) {
+            return;
+        }
+        incrementCounter(currentRunReport.counters.events, key);
+        currentRunReport.events.push({
+            week: state.week,
+            phase,
+            key,
+            title,
+            detail,
+        });
+    }
+    function recordEncounterChoice(encounter, choice) {
+        if (!currentRunReport || !encounter) {
+            return;
+        }
+        incrementCounter(currentRunReport.counters.encounterChoices, `${encounter}:${choice}`);
+    }
+    function recordCrewLoss(member, type, detail) {
+        if (!currentRunReport) {
+            return;
+        }
+        currentRunReport.crew.losses.push({
+            week: state.week,
+            phase: state.phase,
+            memberId: member.id,
+            name: member.name,
+            role: member.role,
+            type,
+            detail,
+            snapshot: createCrewSnapshot(member),
+        });
+    }
+    function recordCrewConsequence(outcome) {
+        if (!currentRunReport) {
+            return;
+        }
+        if (outcome.type === "mutiny") {
+            currentRunReport.counters.crewConsequences.mutiny += 1;
+        }
+        else if (outcome.type === "guard-exile") {
+            currentRunReport.counters.crewConsequences.guardExile += 1;
+        }
+        else if (outcome.type === "food-exile") {
+            currentRunReport.counters.crewConsequences.foodExile += 1;
+        }
+        else if (outcome.type === "whiskey-desertion") {
+            currentRunReport.counters.crewConsequences.whiskeyDesertion += 1;
+        }
+        else if (outcome.type === "paranoia-purge") {
+            if (outcome.fatal) {
+                currentRunReport.counters.crewConsequences.paranoiaDeath += 1;
+            }
+            else {
+                currentRunReport.counters.crewConsequences.paranoiaExile += 1;
+            }
+        }
+        else if (outcome.fatal) {
+            currentRunReport.counters.crewConsequences.collapseDeath += 1;
+        }
+        else {
+            currentRunReport.counters.crewConsequences.collapseDesertion += 1;
+        }
+    }
+    function recordCattleLoss(count, cause, condition, mode) {
+        if (!currentRunReport || count <= 0) {
+            return;
+        }
+        currentRunReport.counters.cattleLosses.total += count;
+        currentRunReport.counters.cattleLosses.byCause[cause] += count;
+        currentRunReport.cattleLossHistory.push({
+            week: state.week,
+            phase: state.phase,
+            count,
+            cause,
+            condition,
+            mode,
+        });
+    }
+    function recordCattleRecovered(count, cause, wrong) {
+        if (!currentRunReport || count <= 0) {
+            return;
+        }
+        currentRunReport.counters.cattleRecovered.total += count;
+        currentRunReport.counters.cattleRecovered.byCause[cause] += count;
+        if (wrong) {
+            currentRunReport.counters.cattleRecovered.wrongRecovered += count;
+        }
+    }
+    async function persistRunReport() {
+        var _a, _b, _c;
+        if (!currentRunReport || !debugMode) {
+            return;
+        }
+        currentRunReport.persistence.attempted = true;
+        try {
+            const response = await fetch("/api/deadwood/reports", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(currentRunReport),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok || !result.filePath) {
+                throw new Error((_a = result.error) !== null && _a !== void 0 ? _a : "REPORT SAVE FAILED");
+            }
+            currentRunReport.persistence.saved = true;
+            currentRunReport.persistence.filePath = result.filePath;
+            currentRunReport.persistence.error = null;
+            root.DeadwoodTrailReports = (_b = root.DeadwoodTrailReports) !== null && _b !== void 0 ? _b : {
+                currentRun: null,
+                lastCompletedRun: null,
+                savePaths: [],
+            };
+            root.DeadwoodTrailReports.savePaths.push(result.filePath);
+            root.DeadwoodTrailReports.lastCompletedRun = JSON.parse(JSON.stringify(currentRunReport));
+            publishRunReportState();
+            await Term.writelns(` TEST REPORT SAVED: ${result.filePath}`);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : "UNKNOWN REPORT SAVE FAILURE";
+            currentRunReport.persistence.saved = false;
+            currentRunReport.persistence.error = message;
+            root.DeadwoodTrailReports = (_c = root.DeadwoodTrailReports) !== null && _c !== void 0 ? _c : {
+                currentRun: null,
+                lastCompletedRun: null,
+                savePaths: [],
+            };
+            root.DeadwoodTrailReports.lastCompletedRun = JSON.parse(JSON.stringify(currentRunReport));
+            publishRunReportState();
+            await Term.writelns(` TEST REPORT SAVE FAILED: ${message}`);
+        }
+    }
+    function finalizeRunReport(outcome, failureCause) {
+        var _a;
+        if (!currentRunReport) {
+            return;
+        }
+        captureRunSnapshot("run-end");
+        updateRunPeaks();
+        const deadCount = currentRunReport.crew.losses.filter(loss => loss.type === "death").length;
+        const exiledCount = currentRunReport.crew.losses.filter(loss => loss.type === "exile").length;
+        const desertedCount = currentRunReport.crew.losses.filter(loss => loss.type === "desertion").length;
+        const startedAt = new Date(currentRunReport.startedAt).getTime();
+        const endedAt = Date.now();
+        currentRunReport.endedAt = new Date(endedAt).toISOString();
+        currentRunReport.durationMs = Number.isNaN(startedAt) ? null : endedAt - startedAt;
+        currentRunReport.summary = {
+            outcome,
+            failureCause,
+            weekEnded: state.week,
+            milesReached: Math.min(state.miles, state.destinationMiles),
+            destinationMiles: state.destinationMiles,
+            cattleRemaining: state.cattle,
+            crewAlive: livingCrew().length,
+            crewDead: deadCount,
+            crewExiled: exiledCount,
+            crewDeserted: desertedCount,
+            foodRemaining: state.food,
+            blightedFoodRemaining: state.blightedFood,
+            ammoRemaining: state.ammo,
+            suppliesRemaining: state.supplies,
+            cashRemaining: state.cash,
+            morale: state.morale,
+            fear: state.fear,
+            wagonCondition: state.wagonCondition,
+            wagonSanctity: state.wagonSanctity,
+            landmarksReached: [...state.reachedLandmarks],
+        };
+        currentRunReport.crew.end = state.crew.map(createCrewSnapshot);
+        publishRunReportState();
+        root.DeadwoodTrailReports = (_a = root.DeadwoodTrailReports) !== null && _a !== void 0 ? _a : {
+            currentRun: null,
+            lastCompletedRun: null,
+            savePaths: [],
+        };
+        root.DeadwoodTrailReports.lastCompletedRun = JSON.parse(JSON.stringify(currentRunReport));
+    }
     function createInitialState() {
         const crew = createInitialCrew();
         const crewSummary = summarizeCrew(crew);
@@ -168,6 +566,10 @@
         Object.assign(state, createInitialState());
         lastStatusSnapshot = null;
         specialistPassiveStatus = createInitialSpecialistPassiveStatus();
+        currentRunReport = null;
+        runResolution = null;
+        capturedSnapshotKeys.clear();
+        publishRunReportState();
         syncDebugOverlay();
     }
     function clamp(value, min, max) {
@@ -604,6 +1006,7 @@
             member.alive = false;
             member.health = 0;
             if (wasAlive) {
+                recordCrewLoss(member, "death", healthDeathDetail(member));
                 state.pendingMessages.push(`CREW LOSS: ${member.name} DIES. ${healthDeathDetail(member)}`);
             }
             return;
@@ -613,6 +1016,7 @@
             member.health = 0;
             member.morale = 0;
             if (wasAlive) {
+                recordCrewLoss(member, "death", `${crewFirstName(member)} CANNOT CARRY THE FEAR ANY FARTHER AND TAKES THEIR OWN LIFE BEFORE DAWN.`);
                 state.pendingMessages.push(`CREW LOSS: ${member.name} DIES. ${crewFirstName(member)} CANNOT CARRY THE FEAR ANY FARTHER AND TAKES THEIR OWN LIFE BEFORE DAWN.`);
             }
         }
@@ -657,10 +1061,14 @@
         if (!member.alive) {
             return;
         }
+        const lossType = fate === "dies" ? "death" :
+            fate === "deserts" ? "desertion" :
+                "exile";
         member.alive = false;
         member.health = 0;
         member.morale = 0;
         member.hunger = 100;
+        recordCrewLoss(member, lossType, detail);
         state.pendingMessages.push(`CREW LOSS: ${member.name} ${fate.toUpperCase()}. ${detail}`);
         if (aftermath) {
             affectCrew(aftermath);
@@ -701,24 +1109,31 @@
             level === "well" ? 4.1 :
                 2.8;
         for (const member of living) {
-            const spread = level === "poor" ? 0.5 :
-                level === "well" ? 0.18 :
-                    0.12;
-            const moraleBias = level === "poor" ? ((100 - member.morale) / 150) : ((100 - member.morale) / 260);
-            const share = Math.max(0.75, baseline + moraleBias + (Math.random() * (spread * 2) - spread));
+            const spread = level === "poor" ? 0.9 :
+                level === "well" ? 0.42 :
+                    0.58;
+            const moraleBias = level === "poor" ? ((100 - member.morale) / 120) : ((100 - member.morale) / 210);
+            const hungerBias = level === "poor" ? ((100 - member.hunger) / 140) :
+                level === "well" ? ((100 - member.hunger) / 260) :
+                    ((100 - member.hunger) / 185);
+            const fortuneShift = Math.random() * (spread * 2) - spread;
+            const share = Math.max(0.4, baseline + moraleBias + hungerBias + fortuneShift);
             member.foodReceivedTotal += share;
             if (level === "poor") {
-                member.hunger += randInt(6, 9);
-                member.morale -= randInt(2, 5);
+                const deprivation = share <= baseline - 0.35 ? 2 : share >= baseline + 0.35 ? -1 : 0;
+                member.hunger += randInt(6, 9) + deprivation;
+                member.morale -= randInt(2, 5) + Math.max(0, deprivation);
             }
             else if (level === "well") {
-                member.hunger -= randInt(6, 10);
-                member.morale += randInt(2, 5);
+                const comfort = share >= baseline + 0.4 ? 2 : share <= baseline - 0.4 ? -1 : 0;
+                member.hunger -= randInt(6, 10) + comfort;
+                member.morale += randInt(2, 5) + Math.max(0, comfort);
                 member.health += randInt(0, 2);
             }
             else {
-                member.hunger += randInt(0, 2);
-                member.morale += randInt(0, 1);
+                const lean = share <= baseline - 0.3 ? 2 : share >= baseline + 0.3 ? -1 : 0;
+                member.hunger += randInt(0, 2) + lean;
+                member.morale += randInt(0, 1) - Math.max(0, lean - 1);
             }
         }
         syncCrewSummary();
@@ -742,6 +1157,9 @@
         }
         state.food -= spoiled;
         state.blightedFood += spoiled;
+        if (currentRunReport) {
+            currentRunReport.counters.blight.contaminated += spoiled;
+        }
         state.pendingMessages.push(`BLIGHT: ${spoiled} CLEAN FOOD SPOILS IN THE WAGON AND JOINS THE TAINTED STORES.`);
     }
     function chooseBlightedEaters(blightedUsed, requiredFood) {
@@ -828,6 +1246,7 @@
         if (!outcome) {
             return;
         }
+        recordCrewConsequence(outcome);
         const target = state.crew.find(member => member.id === outcome.targetId && member.alive);
         if (!target) {
             return;
@@ -968,7 +1387,7 @@
         }
         syncHerdSummary();
     }
-    function removeCattle(count, condition = "dead", mode = "weakest") {
+    function removeCattle(count, condition = "dead", mode = "weakest", cause = "unknown") {
         const active = livingCows();
         if (active.length === 0 || count <= 0) {
             return 0;
@@ -981,11 +1400,12 @@
         }
         if (removed.length > 0) {
             state.recentCattleLossWeeks = Math.max(state.recentCattleLossWeeks, 2);
+            recordCattleLoss(removed.length, cause, condition, mode);
         }
         syncHerdSummary();
         return removed.length;
     }
-    function addRecoveredCattle(count, wrong) {
+    function addRecoveredCattle(count, wrong, cause = "unknown") {
         if (count <= 0) {
             return 0;
         }
@@ -1004,6 +1424,7 @@
             state.herd.push(cow);
         }
         syncHerdSummary();
+        recordCattleRecovered(count, cause, wrong);
         return count;
     }
     function relieveInfectedCattle(count, strength = 8) {
@@ -1677,7 +2098,7 @@
         return livingCrew().find(member => member.role === "hand");
     }
     function recordSpecialistPassiveStatus(role, member, chanceValue, eligible, rolled, success, detail) {
-        var _a;
+        var _a, _b;
         specialistPassiveStatus[role] = {
             week: state.week + 1,
             memberId: (_a = member === null || member === void 0 ? void 0 : member.id) !== null && _a !== void 0 ? _a : null,
@@ -1687,6 +2108,25 @@
             success,
             detail,
         };
+        if (currentRunReport) {
+            const counter = currentRunReport.counters.specialists[role];
+            counter.checks += 1;
+            if (eligible) {
+                counter.eligibleChecks += 1;
+            }
+            if (success) {
+                counter.successes += 1;
+            }
+            currentRunReport.specialists[role].push({
+                week: state.week + 1,
+                memberId: (_b = member === null || member === void 0 ? void 0 : member.id) !== null && _b !== void 0 ? _b : null,
+                eligible,
+                chance: chanceValue,
+                rolled,
+                success,
+                detail,
+            });
+        }
         syncDebugOverlay();
     }
     function huntFallbackPool() {
@@ -1869,6 +2309,9 @@
         }
         const foodFound = randInt(TRAPLINE_FOOD_MIN, TRAPLINE_FOOD_MAX);
         state.food += foodFound;
+        if (currentRunReport) {
+            currentRunReport.counters.specialists.hunter.extraValue += foodFound;
+        }
         recordSpecialistPassiveStatus("hunter", hunter, trapChance, true, true, true, `TRAPLINE BROUGHT IN ${foodFound} FOOD`);
         state.pendingMessages.push(`TRAPLINE: ${hunter.name} CHECKS THE SNARES AT FIRST LIGHT AND BRINGS IN ${foodFound} CLEAN FOOD.`);
     }
@@ -1893,11 +2336,17 @@
             if (warnedEncounter) {
                 state.pendingScoutEncounter = warnedEncounter;
                 state.pendingScoutDetourMiles = scoutDetourMiles(warnedEncounter);
+                if (currentRunReport) {
+                    currentRunReport.counters.scout.warnings += 1;
+                }
                 recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, true, `SPOTTED ${scoutEncounterName(warnedEncounter)}`);
                 return;
             }
         }
         const find = applyScoutFind(scout);
+        if (currentRunReport) {
+            currentRunReport.counters.scout.finds += 1;
+        }
         recordSpecialistPassiveStatus("scout", scout, trailChance, true, true, true, find.detail);
         state.pendingMessages.push(find.message);
     }
@@ -1934,10 +2383,13 @@
         }
         const priority = droverReliefPriority();
         if (priority === "recover") {
-            const recovered = addRecoveredCattle(randInt(DROVER_RECOVER_MIN, DROVER_RECOVER_MAX), false);
+            const recovered = addRecoveredCattle(randInt(DROVER_RECOVER_MIN, DROVER_RECOVER_MAX), false, "drover-passive");
             if (recovered > 0) {
                 state.recentCattleLossWeeks = 0;
                 affectHerd({ stress: -4, fatigue: -2 });
+                if (currentRunReport) {
+                    currentRunReport.counters.specialists.drover.extraValue += recovered;
+                }
                 recordSpecialistPassiveStatus("drover", drover, careChance, true, true, true, `RECOVERED ${recovered} LOST CATTLE`);
                 state.pendingMessages.push(`DROVER: ${drover.name} FINDS ${recovered} STRAY HEAD AT FIRST LIGHT AND WALKS THEM BACK INTO THE DRIVE.`);
             }
@@ -1988,6 +2440,9 @@
             repair += 1;
         }
         state.wagonCondition += repair;
+        if (currentRunReport) {
+            currentRunReport.counters.specialists.hand.extraValue += repair;
+        }
         recordSpecialistPassiveStatus("hand", hand, maintenanceChance, true, true, true, `REPAIRED ${repair} WAGON STRUCTURE`);
         state.pendingMessages.push(`HAND: ${hand.name} PATCHES THE FRAME AND TIGHTENS THE IRON. WAGON STRUCTURE +${repair}.`);
     }
@@ -2067,6 +2522,17 @@
         state.ammo -= bulletsSpent;
         affectHerd({ fatigue: -6, stress: -4, health: 1 });
         const result = resolveHunt(bulletsSpent, actor, fallbackShooter);
+        if (currentRunReport) {
+            currentRunReport.counters.hunt.attempts += 1;
+            currentRunReport.counters.hunt.shotsFired += result.bulletsSpent;
+            currentRunReport.counters.hunt.hits += result.hits;
+            currentRunReport.counters.hunt.cleanFood += result.cleanFood;
+            currentRunReport.counters.hunt.blightedFood += result.blightedFood;
+            currentRunReport.counters.blight.found += result.blightedFood;
+            if (result.fallbackShooter) {
+                currentRunReport.counters.hunt.fallbackAttempts += 1;
+            }
+        }
         state.lastHuntResult = result;
         const huntSkillGain = applyBackupHuntExperience(actor, result);
         const shotLabel = `${result.bulletsSpent} SHOT${result.bulletsSpent === 1 ? "" : "S"}`;
@@ -2165,6 +2631,7 @@
         }
         setDebugMode(Boolean(options === null || options === void 0 ? void 0 : options.debugMode));
         resetState();
+        initializeRunReport();
         state.active = true;
         state.phase = "outfit";
         syncDebugOverlay();
@@ -2193,11 +2660,13 @@
         await printOutfitPrompt();
     }
     async function stop(reason) {
+        var _a, _b;
         if (!state.active) {
             return;
         }
         state.active = false;
         state.phase = "ended";
+        finalizeRunReport((_a = runResolution === null || runResolution === void 0 ? void 0 : runResolution.outcome) !== null && _a !== void 0 ? _a : "quit", (_b = runResolution === null || runResolution === void 0 ? void 0 : runResolution.failureCause) !== null && _b !== void 0 ? _b : null);
         syncDebugOverlay();
         await Term.writelns("");
         if (reason) {
@@ -2207,6 +2676,7 @@
             await Term.writelns(" RUN COMPLETE.");
         }
         await Term.writelns(` FINAL TALLY: CATTLE ${state.cattle}   WEEKS ${state.week}   MILES ${Math.min(state.miles, state.destinationMiles)}/${state.destinationMiles}`);
+        await persistRunReport();
         await Term.writelns(' TYPE "RUN DEADWOOD" TO START A NEW DRIVE.');
         Term.prompt();
     }
@@ -2217,6 +2687,7 @@
             return;
         }
         if (input === "quit" || input === "exit") {
+            runResolution = { outcome: "quit", failureCause: null };
             await stop("RUN COMPLETE.");
             return;
         }
@@ -2390,6 +2861,7 @@
     }
     async function handleOutfitCommand(input) {
         if (input === "start") {
+            recordAction("outfit", "start-drive");
             state.phase = "day";
             await Term.writelns("YOU LEAVE SAN ANTONIO UNDER A CLEAN SUN THAT NONE OF YOU FULLY TRUST.");
             await printStatus();
@@ -2486,12 +2958,17 @@
             state.blessedGrain += quantity;
         if (item === "oil")
             state.wardingOil += quantity;
+        recordAction("outfit", `buy-${item}`, `${quantity} for $${totalCost}`);
         await Term.writelns(`PURCHASED ${quantity} ${item.toUpperCase()} FOR $${totalCost}.`);
         await printStatus();
         await printOutfitPrompt();
     }
     async function handleDayCommand(input) {
         if (input === "travel") {
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.travel += 1;
+            }
+            recordAction("day", "travel", state.activeScoutRoutePlan ? `scout plan ${state.activeScoutRoutePlan}` : "");
             state.lastDayAction = "travel";
             state.occultHuntBonus = false;
             const plannedEncounter = state.activeScoutRoutePlan === "face" ? state.activeScoutEncounter : null;
@@ -2537,6 +3014,10 @@
                 await printDayPrompt();
                 return;
             }
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.hunt += 1;
+            }
+            recordAction("day", "hunt", `ammo ${Math.min(state.ammo, FULL_HUNT_AMMO)}`);
             await resolveHuntAction(Math.min(state.ammo, FULL_HUNT_AMMO));
             return;
         }
@@ -2546,10 +3027,18 @@
                 await printDayPrompt();
                 return;
             }
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.hunt += 1;
+            }
+            recordAction("day", "desperate-hunt", `ammo ${state.ammo}`);
             await resolveHuntAction(state.ammo);
             return;
         }
         if (input === "repair") {
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.repair += 1;
+            }
+            recordAction("day", "repair");
             state.lastDayAction = "repair";
             state.occultHuntBonus = false;
             if (state.supplies < 4) {
@@ -2573,6 +3062,10 @@
             return;
         }
         if (input === "rest") {
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.rest += 1;
+            }
+            recordAction("day", "rest");
             state.lastDayAction = "rest";
             state.occultHuntBonus = false;
             affectCrew({ morale: 8, fear: -6, hunger: -3, health: 2, loyalty: 1 });
@@ -2590,6 +3083,10 @@
             return;
         }
         if (input === "trade") {
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.trade += 1;
+            }
+            recordAction("day", "trade-entry", state.tradeLocation);
             state.lastDayAction = "trade";
             state.occultHuntBonus = false;
             if (!state.canTrade) {
@@ -2601,6 +3098,10 @@
             return;
         }
         if (input === "slaughter") {
+            if (currentRunReport) {
+                currentRunReport.counters.dayActions.slaughter += 1;
+            }
+            recordAction("day", "slaughter");
             state.lastDayAction = "slaughter";
             state.occultHuntBonus = false;
             if (state.cattle <= 0) {
@@ -2608,7 +3109,7 @@
                 await printDayPrompt();
                 return;
             }
-            removeCattle(1, "dead", "injured");
+            removeCattle(1, "dead", "injured", "slaughter");
             state.food += 160;
             affectCrew({ morale: -12, fear: 2 });
             affectHerd({ stress: 10 });
@@ -2620,31 +3121,39 @@
         await printDayPrompt();
     }
     async function handleScoutCommand(input) {
-        var _a, _b, _c, _d;
+        var _a, _b, _c, _d, _e, _f;
         if (!state.pendingScoutEncounter) {
             state.phase = "day";
             await printDayPrompt();
             return;
         }
         if (input === "face it" || input === "face") {
+            if (currentRunReport) {
+                currentRunReport.counters.scout.faced += 1;
+            }
+            recordAction("scout", "face-it", (_a = state.pendingScoutEncounter) !== null && _a !== void 0 ? _a : "");
             const encounter = state.pendingScoutEncounter;
             state.activeScoutEncounter = encounter;
             state.activeScoutRoutePlan = "face";
             state.activeScoutDetourMiles = 0;
             clearScoutWarning();
-            await Term.writelns(`${(_b = (_a = designatedScout()) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(encounter)} HEAD-ON.`);
+            await Term.writelns(`${(_c = (_b = designatedScout()) === null || _b === void 0 ? void 0 : _b.name) !== null && _c !== void 0 ? _c : "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(encounter)} HEAD-ON.`);
             state.phase = "day";
             await printDayPrompt();
             return;
         }
         if (input === "detour" || input === "long way") {
+            if (currentRunReport) {
+                currentRunReport.counters.scout.detoured += 1;
+            }
+            recordAction("scout", "detour", (_d = state.pendingScoutEncounter) !== null && _d !== void 0 ? _d : "");
             const encounter = state.pendingScoutEncounter;
             const detourMiles = state.pendingScoutDetourMiles;
             state.activeScoutEncounter = encounter;
             state.activeScoutRoutePlan = "detour";
             state.activeScoutDetourMiles = detourMiles;
             clearScoutWarning();
-            await Term.writelns(`${(_d = (_c = designatedScout()) === null || _c === void 0 ? void 0 : _c.name) !== null && _d !== void 0 ? _d : "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${detourMiles} MILES BUT AVOIDS ${scoutEncounterName(encounter)}.`);
+            await Term.writelns(`${(_f = (_e = designatedScout()) === null || _e === void 0 ? void 0 : _e.name) !== null && _f !== void 0 ? _f : "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${detourMiles} MILES BUT AVOIDS ${scoutEncounterName(encounter)}.`);
             state.phase = "day";
             await printDayPrompt();
             return;
@@ -2791,6 +3300,7 @@
                 return;
             }
             affectCrew({ morale: 2 });
+            recordAction("trade", input, `${state.tradeLocation}:${state.tradeTime}`);
             await Term.writelns(`EL PASO DEAL CLOSED: ${input.toUpperCase()} SECURED.`);
             await printStatus();
             await printTradePrompt();
@@ -2814,7 +3324,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             state.wardingOil += 2;
             affectCrew({ fear: 4 });
             await Term.writelns(`YOU TRADE ${cattleCost} HEAD OF CATTLE FOR TWO BOTTLES OF WARDING OIL.`);
@@ -2826,7 +3336,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             affectCrew({ fear: -18, morale: -4 });
             await Term.writelns("A SILVER MIRROR PASSES INTO YOUR HANDS. IT CALMS THE CREW AND UNSETTLES THEM ALL THE SAME.");
         }
@@ -2837,7 +3347,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             state.supplies += 10;
             state.wagonCondition += 6;
             state.wagonSanctity += 4;
@@ -2850,7 +3360,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             affectCrew({ fear: -14 });
             state.wagonSanctity += 12;
             await Term.writelns(`THE NIGHT VIGIL TAKES ${cattleCost} HEAD FROM THE HERD AND LEAVES THE CAMP RINGED IN A THIN, SALTY PEACE.`);
@@ -2862,7 +3372,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             affectHerd({ health: 6, blight: -4, stress: -4 });
             const relieved = relieveInfectedCattle(percentOfHerd(10), 10);
             await Term.writelns(`${cattleCost} HEAD ARE LED AWAY. THE REMAINING HERD BREATHES EASIER, AS IF SOMETHING HUNGRIER HAS BEEN FED. ${relieved > 0 ? "THE WORST OF THE INFECTED STOCK SETTLES AFTER." : ""}`.trim());
@@ -2874,7 +3384,7 @@
                 await printTradePrompt();
                 return;
             }
-            removeCattle(cattleCost, "dead", "injured");
+            removeCattle(cattleCost, "dead", "injured", "damned-trade");
             state.food += 60;
             state.supplies += 6;
             await Term.writelns(`${cattleCost} HEAD BUY A CACHE OF FEED AND HARDWARE THAT NO ONE ADMITS WAS HERE A MOMENT AGO.`);
@@ -2885,6 +3395,7 @@
             return;
         }
         state.damnedTradeCount += 1;
+        recordAction("trade", input, `${state.tradeLocation}:${state.tradeTime}`);
         await printStatus();
         await printTradePrompt();
     }
@@ -2904,6 +3415,7 @@
             state.supplies -= 4;
             state.wagonCondition += 10;
             affectHerd({ fatigue: -4, stress: -3 });
+            recordAction("repair", "patch");
             await Term.writelns("YOU PATCH CRACKED WOOD, REWRAP JOINTS, AND MURMUR WHAT PASSES FOR A BLESSING.");
             await transitionToRations();
             return;
@@ -2918,6 +3430,7 @@
             state.wagonCondition += 22;
             affectCrew({ morale: -2, hunger: 1 });
             affectHerd({ fatigue: -5, health: 3 });
+            recordAction("repair", "reinforce");
             applyToCowSubset(chooseCowSubset(percentOfHerd(8), "injured"), cow => {
                 cow.health += randInt(3, 6);
                 cow.fatigue -= randInt(3, 6);
@@ -2939,6 +3452,7 @@
             state.wagonSanctity += 12;
             affectCrew({ fear: -4 });
             affectHerd({ stress: -6, blight: -2 });
+            recordAction("repair", "iron");
             const relieved = relieveInfectedCattle(percentOfHerd(8), 7);
             state.pendingMessages.push("COLD IRON PATCHED INTO THE FRAME BLUNTS THE VEIL'S REACH FOR A LITTLE WHILE.");
             await Term.writelns(`YOU HAMMER COLD IRON INTO THE FRAME. THE SOUND MAKES THE NIGHT FEEL FARTHER AWAY.${relieved > 0 ? " SOME OF THE GLASSY-EYED STOCK SETTLES AFTER THE RITE." : ""}`);
@@ -2961,6 +3475,10 @@
         }
         state.rationLevel = input;
         state.rationChangedThisWeek = true;
+        if (currentRunReport) {
+            currentRunReport.counters.rationChoices[input] += 1;
+        }
+        recordAction("rations", input);
         await Term.writelns(`RATIONS SET TO ${rationLabel()} FOR THIS WEEK. THIS SETTING WILL PERSIST UNTIL YOU CHANGE IT AGAIN.`);
         state.phase = "day";
         await printDayPrompt();
@@ -2973,6 +3491,9 @@
         const remainingNeed = requiredFood - cleanUsed;
         const blightedUsed = Math.min(state.blightedFood, remainingNeed);
         state.blightedFood -= blightedUsed;
+        if (currentRunReport && blightedUsed > 0) {
+            currentRunReport.counters.blight.consumed += blightedUsed;
+        }
         if (level === "poor") {
             affectCrew({ morale: -7, fear: 5, hunger: 6, health: -1, loyalty: -2 });
             distributeCrewFood(level);
@@ -2999,6 +3520,10 @@
         state.occultHuntBonus = false;
         state.nightHuntPenalty = false;
         if (input === "campfire") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.campfire += 1;
+            }
+            recordAction("night", "campfire");
             state.lastNightAction = "campfire";
             affectCrew({ morale: 10, fear: -5, hunger: -1 });
             affectHerd({ stress: -3, fatigue: -2 });
@@ -3006,13 +3531,17 @@
             if (chance(28)) {
                 affectCrew({ fear: 10, morale: -2 });
                 affectHerd({ stress: 16 });
-                removeCattle(randInt(2, 7) + herdLossRiskBonus(), "lost");
+                removeCattle(randInt(2, 7) + herdLossRiskBonus(), "lost", "weakest", "campfire-stampede");
                 await Term.writelns("THE FLAMES DRAW GLOAM-WALKERS TO THE EDGE OF CAMP. SOME OF THE HERD BOLTS.");
             }
             await endNight();
             return;
         }
         if (input === "guard") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.guard += 1;
+            }
+            recordAction("night", "guard");
             state.lastNightAction = "guard";
             const guards = assignGuardDuty();
             affectCrew({ morale: -1, fear: -14, loyalty: 1 });
@@ -3029,6 +3558,10 @@
             return;
         }
         if (input === "whiskey") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.whiskey += 1;
+            }
+            recordAction("night", "whiskey");
             state.lastNightAction = "whiskey";
             if (state.whiskey < 1) {
                 await Term.writelns("THE BOTTLE IS DRY.");
@@ -3043,6 +3576,10 @@
             return;
         }
         if (input === "occultist") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.occultist += 1;
+            }
+            recordAction("night", "occultist");
             state.lastNightAction = "occultist";
             if (!state.hasOccultist) {
                 await Term.writelns("NO OCCULTIST RIDES WITH YOU.");
@@ -3062,6 +3599,10 @@
             return;
         }
         if (input === "night") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.night += 1;
+            }
+            recordAction("night", "night-drive");
             state.lastNightAction = "night";
             state.nightHuntPenalty = true;
             const miles = travelMiles(18, 36);
@@ -3087,6 +3628,10 @@
             return;
         }
         if (input === "trade") {
+            if (currentRunReport) {
+                currentRunReport.counters.nightActions.trade += 1;
+            }
+            recordAction("night", "trade-entry", state.tradeLocation);
             state.lastDayAction = "trade";
             state.lastNightAction = "trade";
             if (!state.canTrade) {
@@ -3102,6 +3647,10 @@
     }
     async function handleBlightCommand(input) {
         if (input === "take" || input === "feed") {
+            if (currentRunReport) {
+                currentRunReport.counters.blight.taken += state.pendingBlightedFood;
+            }
+            recordAction("blight", "take", `${state.pendingBlightedFood} food`);
             state.blightedFood += state.pendingBlightedFood;
             affectCrew({ fear: 12, morale: -6, health: -4 });
             await Term.writelns(`YOU KEEP ${state.pendingBlightedFood} FOOD AND WRAP IT INTO THE STORES. THE CAMP FEELS WRONG THE MOMENT THE TAINTED MEAT JOINS THE WAGON.`);
@@ -3110,6 +3659,10 @@
             return;
         }
         if (input === "leave" || input === "discard") {
+            if (currentRunReport) {
+                currentRunReport.counters.blight.left += state.pendingBlightedFood;
+            }
+            recordAction("blight", "leave", `${state.pendingBlightedFood} food`);
             affectCrew({ morale: -4 });
             await Term.writelns("YOU LEAVE THE BLIGHTED MEAT WHERE IT LIES.");
             state.pendingBlightedFood = 0;
@@ -3127,42 +3680,50 @@
         }
         if (state.pendingEncounter === "ash-drowner") {
             if (input === "passage") {
+                recordEncounterChoice("ash-drowner", "passage");
+                recordAction("encounter", "passage", "ash-drowner");
                 if (state.cattle < 8) {
                     await Term.writelns("YOU CANNOT MAKE THAT OFFER. THE HERD IS TOO THIN.");
                     await printEncounterPrompt();
                     return;
                 }
-                removeCattle(8);
+                removeCattle(8, "dead", "weakest", "ash-drowner-encounter");
                 state.miles += 40;
                 affectCrew({ fear: -12 });
                 affectHerd({ stress: -16, fatigue: -6 });
                 await Term.writelns("EIGHT HEAD WALK INTO THE ASH WITH THE STRANGER. THE TRAIL AHEAD OPENS LIKE IT WAS WAITING FOR PAYMENT.");
             }
             else if (input === "ward") {
+                recordEncounterChoice("ash-drowner", "ward");
+                recordAction("encounter", "ward", "ash-drowner");
                 if (state.cattle < 6) {
                     await Term.writelns("YOU CANNOT MAKE THAT OFFER. THE HERD IS TOO THIN.");
                     await printEncounterPrompt();
                     return;
                 }
-                removeCattle(6);
+                removeCattle(6, "dead", "weakest", "ash-drowner-encounter");
                 state.wagonSanctity += 18;
                 state.wagonCondition += 8;
                 affectHerd({ health: 8, stress: -10, blight: -5 });
                 await Term.writelns("SIX HEAD ARE TAKEN BEHIND A SALT CURTAIN. WHAT RETURNS IS SILENCE, AND A STRONGER WARD AROUND YOUR DRIVE.");
             }
             else if (input === "provender") {
+                recordEncounterChoice("ash-drowner", "provender");
+                recordAction("encounter", "provender", "ash-drowner");
                 if (state.cattle < 5) {
                     await Term.writelns("YOU CANNOT MAKE THAT OFFER. THE HERD IS TOO THIN.");
                     await printEncounterPrompt();
                     return;
                 }
-                removeCattle(5);
+                removeCattle(5, "dead", "weakest", "ash-drowner-encounter");
                 state.food += 120;
                 state.supplies += 10;
                 affectHerd({ health: 5, fatigue: -8, stress: -4 });
                 await Term.writelns("FIVE HEAD BUY BACK A WEEK OF STRENGTH IN FEED, TOOLS, AND BREATHING ROOM.");
             }
             else if (input === "refuse") {
+                recordEncounterChoice("ash-drowner", "refuse");
+                recordAction("encounter", "refuse", "ash-drowner");
                 affectCrew({ fear: 8, morale: -4, loyalty: -2 });
                 affectHerd({ stress: 14, fatigue: 5 });
                 await Term.writelns("YOU KEEP EVERY HEAD, BUT THE THING WALKS THE HERDLINE UNTIL MORNING. NONE OF THE CATTLE FORGET IT.");
@@ -3175,24 +3736,30 @@
         }
         else if (state.pendingEncounter === "salt-chapel") {
             if (input === "tithe") {
+                recordEncounterChoice("salt-chapel", "tithe");
+                recordAction("encounter", "tithe", "salt-chapel");
                 if (state.cattle < 6) {
                     await Term.writelns("YOU CANNOT MAKE THAT OFFER. THE HERD IS TOO THIN.");
                     await printEncounterPrompt();
                     return;
                 }
-                removeCattle(6, "dead", "injured");
+                removeCattle(6, "dead", "injured", "salt-chapel-encounter");
                 state.wagonSanctity += 18;
                 affectCrew({ fear: -8 });
                 affectHerd({ blight: -6, stress: -4 });
                 await Term.writelns("SIX HEAD BLEED INTO SALT THAT SHOULD NOT TAKE LIQUID. THE BELL STOPS MOVING. THE CAMP BREATHES EASIER AFTER.");
             }
             else if (input === "confess") {
+                recordEncounterChoice("salt-chapel", "confess");
+                recordAction("encounter", "confess", "salt-chapel");
                 affectCrew({ morale: -8, loyalty: -6, fear: -6 });
                 state.wagonSanctity += 10;
                 affectHerd({ stress: -2 });
                 await Term.writelns("THE CREW SPEAKS INTO THE RUIN ONE BY ONE. NOBODY REPEATS WHAT THEY SAID, BUT THE WAGON FEELS LESS EXPOSED AFTER.");
             }
             else if (input === "pass" || input === "pass by") {
+                recordEncounterChoice("salt-chapel", "pass");
+                recordAction("encounter", "pass", "salt-chapel");
                 affectCrew({ fear: 6 });
                 state.wagonSanctity -= 8;
                 affectHerd({ blight: 3 });
@@ -3206,16 +3773,18 @@
         }
         else if (state.pendingEncounter === "hollow-drover") {
             if (input === "follow") {
+                recordEncounterChoice("hollow-drover", "follow");
+                recordAction("encounter", "follow", "hollow-drover");
                 if (chance(60)) {
                     state.miles += 35;
-                    addRecoveredCattle(4, false);
+                    addRecoveredCattle(4, false, "hollow-drover-follow");
                     affectCrew({ fear: 8 });
                     affectHerd({ stress: 4 });
                     await Term.writelns("HE LEADS YOU THROUGH A LOW SALT DRAW WHERE STRAYS STILL HUDDLE. SOME OF THEM ANSWER YOUR BRANDS.");
                 }
                 else {
                     state.miles += 20;
-                    addRecoveredCattle(6, true);
+                    addRecoveredCattle(6, true, "hollow-drover-follow");
                     affectCrew({ fear: 12 });
                     affectHerd({ stress: 6, blight: 5 });
                     applyToCowSubset(chooseCowSubset(percentOfHerd(8), "infected"), cow => {
@@ -3227,12 +3796,14 @@
                 }
             }
             else if (input === "bargain") {
+                recordEncounterChoice("hollow-drover", "bargain");
+                recordAction("encounter", "bargain", "hollow-drover");
                 if (state.cattle < 4) {
                     await Term.writelns("YOU CANNOT MAKE THAT OFFER. THE HERD IS TOO THIN.");
                     await printEncounterPrompt();
                     return;
                 }
-                removeCattle(4, "dead", "injured");
+                removeCattle(4, "dead", "injured", "hollow-drover-encounter");
                 affectCrew({ fear: -10 });
                 affectHerd({ stress: -8 });
                 state.supplies += 8;
@@ -3240,6 +3811,8 @@
                 await Term.writelns("HE TAKES PAYMENT WITHOUT TOUCHING THE ROPE. THE HERD SETTLES AFTER, AS IF SOMETHING FOLLOWING YOU HAS BEEN FED ELSEWHERE.");
             }
             else if (input === "drive off" || input === "drive") {
+                recordEncounterChoice("hollow-drover", "drive-off");
+                recordAction("encounter", "drive-off", "hollow-drover");
                 affectCrew({ fear: 5 });
                 affectHerd({ stress: 5 });
                 await Term.writelns("YOU TURN THE HERD AWAY FROM HIM AND DO NOT LOOK BACK. NOBODY SAYS WHAT THEY HEARD IN HIS VOICE.");
@@ -3283,6 +3856,7 @@
         state.rationChangedThisWeek = false;
         clearScoutRoutePlan();
         state.phase = state.pendingScoutEncounter ? "scout" : "day";
+        captureRunSnapshot("week-start");
         await printStatus();
         await printEnvironment(environmentLines());
         if (state.phase === "scout") {
@@ -3307,6 +3881,7 @@
         state.pendingScoutDetourMiles = Math.max(0, state.pendingScoutDetourMiles);
         syncCrewSummary();
         syncHerdSummary();
+        updateRunPeaks();
     }
     function resolveNightDecay() {
         affectCrew({ fear: 4, hunger: 1 });
@@ -3361,6 +3936,21 @@
         if (state.wagonSanctity < 50) {
             affectCrew({ fear: 8, morale: -2 });
             state.pendingMessages.push("CAUSE: THE WAGON FEELS THIN AND EXPOSED. THE CREW CAN SENSE THE SANCTITY FAILING.");
+        }
+        const starvingCrew = livingCrew().filter(member => member.hunger >= 85);
+        if (starvingCrew.length > 0) {
+            for (const member of starvingCrew) {
+                const healthLoss = member.hunger >= 95 ? randInt(3, 5) :
+                    member.hunger >= 90 ? randInt(2, 4) :
+                        randInt(1, 2);
+                member.health -= healthLoss;
+                member.morale -= randInt(1, 3);
+                updateCrewMember(member);
+            }
+            syncCrewSummary();
+            const names = formatNameList(starvingCrew.map(member => crewFirstName(member)));
+            const verb = starvingCrew.length === 1 ? "IS" : "ARE";
+            state.pendingMessages.push(`CAUSE: ${names} ${verb} STARVING BADLY ENOUGH THAT THEIR HEALTH STARTS TO FAIL.`);
         }
         if (state.food === 0 && state.blightedFood === 0) {
             const hungryTargets = chooseCowSubset(percentOfHerd(18), "weakest");
@@ -3436,6 +4026,7 @@
         });
         const collapsed = markDeadIfCollapsed(collapseTargets);
         if (collapsed > 0) {
+            recordCattleLoss(collapsed, "night-collapse", "dead", "collapsed");
             state.pendingMessages.push(guardedNight
                 ? `HERD LOSS: ${collapsed} HEAD FROM ${describeCowSubset(collapseTargets).toUpperCase()} STILL GIVE OUT OVERNIGHT. THE GUARD LINE HELD THE CAMP TOGETHER, BUT IT COULD NOT UNDO EARLIER STRAIN.`
                 : `HERD LOSS: ${collapsed} HEAD FROM ${describeCowSubset(collapseTargets).toUpperCase()} GIVE OUT FROM SICKNESS, LAMENESS, OR SHEER EXHAUSTION.`);
@@ -3447,7 +4038,7 @@
                 cow.fatigue += randInt(2, 5);
                 cow.trauma = clampStat(cow.trauma + randInt(4, 7));
             });
-            const lost = removeCattle(panicked.length, "lost");
+            const lost = removeCattle(panicked.length, "lost", "weakest", "night-panic");
             if (lost > 0) {
                 state.pendingMessages.push(`HERD LOSS: ${lost} HEAD FROM ${describeCowSubset(panicked).toUpperCase()} BOLT INTO THE DARK WHEN THE LINE LOSES ITS NERVE.`);
             }
@@ -3513,6 +4104,7 @@
         }
     }
     async function hummingRustEvent() {
+        recordEvent("humming-rust", "The Humming Rust", "", "day");
         state.supplies -= 8;
         affectCrew({ morale: -4 });
         await Term.writelns("EVENT: THE HUMMING RUST.");
@@ -3520,6 +4112,7 @@
         await Term.writelns("EFFECT: YOU SPEND SUPPLIES AND SPIRIT TO STOP A WORSE LOSS.");
     }
     async function gravityHiccupEvent() {
+        recordEvent("gravity-hiccup", "The Gravity Hiccup", "", "day");
         state.wagonCondition -= 12;
         affectCrew({ morale: -6, fear: 3, health: -1 });
         affectHerd({ stress: 7, health: -4, fatigue: 4 });
@@ -3528,6 +4121,7 @@
         await Term.writelns("EFFECT: THE IMPACT HITS BOTH THE WAGON AND THE CREW HARD.");
     }
     async function bloodRainEvent() {
+        recordEvent("blood-rain", "Blood-Rain", "", state.phase === "night" ? "night" : "day");
         state.wagonCondition -= 15;
         affectCrew({ morale: -6, fear: 4, health: -1 });
         affectHerd({ stress: 10, health: -3, blight: 4 });
@@ -3541,6 +4135,7 @@
         await Term.writelns("EFFECT: THE STORM CHEWS UP THE WAGON AND LEAVES THE CREW SHAKEN.");
     }
     async function whisperingCacheEvent() {
+        recordEvent("whispering-cache", "The Whispering Cache", "", "day");
         state.food += 35;
         state.supplies += 4;
         affectCrew({ fear: 15, morale: -1 });
@@ -3550,6 +4145,7 @@
         await Term.writelns("EFFECT: THE CACHE HELPS YOU, BUT IT LEAVES THE CREW BADLY UNSETTLED.");
     }
     async function mirrorTwinEvent() {
+        recordEvent("mirror-twin", "The Mirror-Twin", "", "day");
         affectCrew({ fear: 12, morale: -5 });
         affectHerd({ stress: 6 });
         await Term.writelns("EVENT: THE MIRROR-TWIN.");
@@ -3557,6 +4153,7 @@
         await Term.writelns("EFFECT: THE ENCOUNTER LEAVES THE CREW SHAKEN.");
     }
     async function circlesEvent() {
+        recordEvent("lost-in-the-staked-plains", "Lost In The Staked Plains", "", "day");
         affectCrew({ fear: 14, morale: -2 });
         state.miles = Math.max(0, state.miles - 20);
         affectHerd({ fatigue: 8, stress: 10 });
@@ -3565,6 +4162,7 @@
         await Term.writelns("EFFECT: YOU LOSE GROUND AND THE CREW LOSES ITS BEARING.");
     }
     async function howlingEvent() {
+        recordEvent("howling-in-the-dark", "Howling In The Dark", "", "night");
         affectCrew({ fear: 12 });
         affectHerd({ stress: 12 });
         await Term.writelns("EVENT: HOWLING IN THE DARK.");
@@ -3606,11 +4204,12 @@
             cow.fatigue += randInt(6, 10);
             cow.health -= randInt(6, 14);
         });
-        const actuallyLost = removeCattle(doomed.length, "lost");
+        const actuallyLost = removeCattle(doomed.length, "lost", "weakest", "stampede");
         affectHerd({ stress: 8, fatigue: 6 });
         await Term.writelns(`STAMPEDE. YOU LOSE ${actuallyLost} HEAD OF CATTLE.`);
     }
     async function thirstyCrossingEvent() {
+        recordEvent("thirsty-crossing", "Thirsty Crossing", "", "day");
         affectHerd({ health: -3, fatigue: 4, stress: 3 });
         const thirsty = chooseCowSubset(percentOfHerd(20), "fatigued");
         applyToCowSubset(thirsty, cow => {
@@ -3623,6 +4222,7 @@
         await Term.writelns(`EFFECT: ${describeCowSubset(thirsty).toUpperCase()} COME OUT OF THE DAY THINNER, SLOWER, AND EASIER TO RATTLE.`);
     }
     async function hoofRotEvent() {
+        recordEvent("hoof-rot", "Hoof Rot", "", "day");
         affectHerd({ health: -3, fatigue: 2 });
         const afflicted = chooseCowSubset(percentOfHerd(12), "weakest");
         applyToCowSubset(afflicted, cow => {
@@ -3639,6 +4239,7 @@
         await Term.writelns(`EFFECT: ${describeCowSubset(afflicted).toUpperCase()} TAKE THE WORST OF IT. IF YOU KEEP PUSHING HARD, LOSSES WILL FOLLOW.`);
     }
     async function driftEvent() {
+        recordEvent("night-drift", "Night Drift", "", "day");
         affectHerd({ stress: 6, fatigue: 2 });
         const drifting = chooseCowSubset(percentOfHerd(15), "stressed");
         applyToCowSubset(drifting, cow => {
@@ -3651,6 +4252,7 @@
         await Term.writelns(`EFFECT: ${describeCowSubset(drifting).toUpperCase()} ARE MUCH HARDER TO CONTROL NOW.`);
     }
     async function ashDrownerEncounter() {
+        recordEvent("ash-drowner", "The Ash-Drowner", "", "encounter");
         state.pendingEncounter = "ash-drowner";
         state.phase = "encounter";
         await Term.writelns("ENCOUNTER: THE ASH-DROWNER.");
@@ -3658,6 +4260,7 @@
         await printEncounterPrompt();
     }
     async function saltChapelEncounter() {
+        recordEvent("salt-chapel", "The Salt Chapel", "", "encounter");
         state.pendingEncounter = "salt-chapel";
         state.phase = "encounter";
         await Term.writelns("ENCOUNTER: THE SALT CHAPEL.");
@@ -3667,6 +4270,7 @@
         await printEncounterPrompt();
     }
     async function hollowDroverEncounter() {
+        recordEvent("hollow-drover", "The Hollow Drover", "", "encounter");
         state.pendingEncounter = "hollow-drover";
         state.phase = "encounter";
         await Term.writelns("ENCOUNTER: THE HOLLOW DROVER.");
@@ -3680,6 +4284,7 @@
         for (const landmark of LANDMARKS) {
             if (state.miles >= landmark.mile && !state.reachedLandmarks.includes(landmark.name)) {
                 state.reachedLandmarks.push(landmark.name);
+                recordEvent(`landmark:${landmark.name.toLowerCase().replace(/\s+/g, "-")}`, `Landmark Reached: ${landmark.name}`, "", "system");
                 await printBlock(["", ...landmark.onReach(state), ""]);
             }
         }
@@ -3693,6 +4298,7 @@
             }
         }
         if (state.cattle <= 0) {
+            runResolution = { outcome: "failure", failureCause: "herd-lost" };
             await printBlock([
                 "",
                 "FAILURE: HERD LOST.",
@@ -3703,6 +4309,7 @@
             return true;
         }
         if (state.morale <= 0 && state.fear >= 70) {
+            runResolution = { outcome: "failure", failureCause: "crew-breaks" };
             await printBlock([
                 "",
                 "FAILURE: THE CREW BREAKS.",
@@ -3713,6 +4320,7 @@
             return true;
         }
         if (state.wagonCondition <= 0) {
+            runResolution = { outcome: "failure", failureCause: "wagon-breaks" };
             await printBlock([
                 "",
                 "FAILURE: WAGON BREAKS.",
@@ -3723,6 +4331,7 @@
             return true;
         }
         if (state.wagonSanctity <= 0) {
+            runResolution = { outcome: "failure", failureCause: "sanctity-collapses" };
             await printBlock([
                 "",
                 "FAILURE: SANCTITY COLLAPSES.",
@@ -3733,6 +4342,7 @@
             return true;
         }
         if (state.week > 20 && state.food <= 0) {
+            runResolution = { outcome: "failure", failureCause: "drive-stalls" };
             await printBlock([
                 "",
                 "FAILURE: THE DRIVE STALLS.",
@@ -3743,6 +4353,7 @@
             return true;
         }
         if (state.miles >= state.destinationMiles) {
+            runResolution = { outcome: "victory", failureCause: null };
             await printBlock(["", "ARRIVAL: THE SILVER FOLD.", "YOU HAVE REACHED THE SILVER FOLD."]);
             if (state.cattle >= 500 && state.fear < 60 && state.morale > 40) {
                 await Term.writelns("THE HERD ARRIVES WHOLE ENOUGH TO FEEL LIKE A MIRACLE.");
@@ -3878,7 +4489,6 @@
         stop,
         autocomplete,
     };
-    const root = window;
     root.DeadwoodGame = api;
     App.deadwood = api;
 })();

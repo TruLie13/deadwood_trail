@@ -1,0 +1,711 @@
+{
+  "schemaVersion": 1,
+  "game": "deadwood-trail",
+  "runId": "2026-04-17T21-50-14-810Z_msdfi8",
+  "mode": "test",
+  "startedAt": "2026-04-17T21:50:14.810Z",
+  "endedAt": "2026-04-17T21:50:45.108Z",
+  "durationMs": 30298,
+  "summary": {
+    "outcome": "failure",
+    "failureCause": "wagon-breaks",
+    "weekEnded": 4,
+    "milesReached": 220,
+    "destinationMiles": 900,
+    "cattleRemaining": 390,
+    "crewAlive": 4,
+    "crewDead": 0,
+    "crewExiled": 0,
+    "crewDeserted": 1,
+    "foodRemaining": 38,
+    "blightedFoodRemaining": 0,
+    "ammoRemaining": 10,
+    "suppliesRemaining": 10,
+    "cashRemaining": 310,
+    "morale": 35,
+    "fear": 100,
+    "wagonCondition": 0,
+    "wagonSanctity": 85,
+    "landmarksReached": [
+      "Painted Canyons"
+    ]
+  },
+  "counters": {
+    "dayActions": {
+      "travel": 4,
+      "hunt": 0,
+      "repair": 0,
+      "rest": 0,
+      "trade": 0,
+      "slaughter": 0
+    },
+    "nightActions": {
+      "campfire": 0,
+      "guard": 0,
+      "whiskey": 0,
+      "occultist": 0,
+      "night": 3,
+      "trade": 0
+    },
+    "rationChoices": {
+      "poor": 0,
+      "moderate": 0,
+      "well": 0
+    },
+    "blight": {
+      "found": 0,
+      "taken": 0,
+      "left": 0,
+      "consumed": 0,
+      "contaminated": 0
+    },
+    "hunt": {
+      "attempts": 0,
+      "fallbackAttempts": 0,
+      "shotsFired": 0,
+      "hits": 0,
+      "cleanFood": 0,
+      "blightedFood": 0
+    },
+    "scout": {
+      "warnings": 0,
+      "finds": 0,
+      "faced": 0,
+      "detoured": 0
+    },
+    "specialists": {
+      "hunter": {
+        "checks": 3,
+        "eligibleChecks": 2,
+        "successes": 0,
+        "extraValue": 0
+      },
+      "scout": {
+        "checks": 3,
+        "eligibleChecks": 2,
+        "successes": 0,
+        "extraValue": 0
+      },
+      "drover": {
+        "checks": 3,
+        "eligibleChecks": 2,
+        "successes": 0,
+        "extraValue": 0
+      },
+      "hand": {
+        "checks": 3,
+        "eligibleChecks": 2,
+        "successes": 1,
+        "extraValue": 5
+      }
+    },
+    "crewConsequences": {
+      "mutiny": 0,
+      "guardExile": 0,
+      "foodExile": 0,
+      "whiskeyDesertion": 0,
+      "paranoiaDeath": 0,
+      "paranoiaExile": 0,
+      "collapseDeath": 0,
+      "collapseDesertion": 1
+    },
+    "cattleLosses": {
+      "total": 110,
+      "byCause": {
+        "slaughter": 0,
+        "campfire-stampede": 0,
+        "night-panic": 10,
+        "night-collapse": 0,
+        "stampede": 100,
+        "damned-trade": 0,
+        "ash-drowner-encounter": 0,
+        "salt-chapel-encounter": 0,
+        "hollow-drover-encounter": 0,
+        "scout-warning": 0,
+        "event": 0,
+        "unknown": 0
+      }
+    },
+    "cattleRecovered": {
+      "total": 0,
+      "byCause": {
+        "drover-passive": 0,
+        "hollow-drover-follow": 0,
+        "unknown": 0
+      },
+      "wrongRecovered": 0
+    },
+    "events": {
+      "blood-rain": 3,
+      "landmark:painted-canyons": 1,
+      "gravity-hiccup": 1,
+      "howling-in-the-dark": 1
+    },
+    "encounterChoices": {}
+  },
+  "peaks": {
+    "maxFear": 100,
+    "minMorale": 35,
+    "maxCrewHunger": 100,
+    "minCrewHealth": 0,
+    "minWagonCondition": 0,
+    "minWagonSanctity": 85,
+    "minHerdHealth": 38,
+    "maxHerdStress": 100,
+    "maxHerdFatigue": 100,
+    "maxHerdBlight": 12,
+    "minCattle": 390
+  },
+  "crew": {
+    "start": [
+      {
+        "id": 1,
+        "name": "EZEKIEL VALE",
+        "role": "leader",
+        "alive": true,
+        "isLeader": true,
+        "fear": 12,
+        "morale": 78,
+        "hunger": 18,
+        "health": 88,
+        "loyalty": 92,
+        "cattleSkill": 92,
+        "huntSkill": 58,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 0,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 2,
+        "name": "MARA QUILL",
+        "role": "scout",
+        "alive": true,
+        "isLeader": false,
+        "fear": 20,
+        "morale": 65,
+        "hunger": 22,
+        "health": 82,
+        "loyalty": 73,
+        "cattleSkill": 54,
+        "huntSkill": 70,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 0,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 3,
+        "name": "JONAH REED",
+        "role": "drover",
+        "alive": true,
+        "isLeader": false,
+        "fear": 18,
+        "morale": 65,
+        "hunger": 17,
+        "health": 81,
+        "loyalty": 73,
+        "cattleSkill": 63,
+        "huntSkill": 52,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 0,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 4,
+        "name": "ELIAS VOSS",
+        "role": "hunter",
+        "alive": true,
+        "isLeader": false,
+        "fear": 19,
+        "morale": 61,
+        "hunger": 19,
+        "health": 78,
+        "loyalty": 67,
+        "cattleSkill": 49,
+        "huntSkill": 84,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 0,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 5,
+        "name": "RUTH CALDWELL",
+        "role": "hand",
+        "alive": true,
+        "isLeader": false,
+        "fear": 17,
+        "morale": 66,
+        "hunger": 22,
+        "health": 81,
+        "loyalty": 69,
+        "cattleSkill": 52,
+        "huntSkill": 44,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 0,
+        "whiskeyReceivedTotal": 0
+      }
+    ],
+    "end": [
+      {
+        "id": 1,
+        "name": "EZEKIEL VALE",
+        "role": "leader",
+        "alive": true,
+        "isLeader": true,
+        "fear": 100,
+        "morale": 45,
+        "hunger": 34,
+        "health": 84,
+        "loyalty": 91,
+        "cattleSkill": 93,
+        "huntSkill": 58,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 9.46,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 2,
+        "name": "MARA QUILL",
+        "role": "scout",
+        "alive": false,
+        "isLeader": false,
+        "fear": 100,
+        "morale": 0,
+        "hunger": 100,
+        "health": 0,
+        "loyalty": 76,
+        "cattleSkill": 55,
+        "huntSkill": 70,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 10.35,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 3,
+        "name": "JONAH REED",
+        "role": "drover",
+        "alive": true,
+        "isLeader": false,
+        "fear": 100,
+        "morale": 35,
+        "hunger": 25,
+        "health": 78,
+        "loyalty": 72,
+        "cattleSkill": 65,
+        "huntSkill": 52,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 9.88,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 4,
+        "name": "ELIAS VOSS",
+        "role": "hunter",
+        "alive": true,
+        "isLeader": false,
+        "fear": 100,
+        "morale": 24,
+        "hunger": 31,
+        "health": 79,
+        "loyalty": 60,
+        "cattleSkill": 50,
+        "huntSkill": 84,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 9.83,
+        "whiskeyReceivedTotal": 0
+      },
+      {
+        "id": 5,
+        "name": "RUTH CALDWELL",
+        "role": "hand",
+        "alive": true,
+        "isLeader": false,
+        "fear": 100,
+        "morale": 35,
+        "hunger": 33,
+        "health": 70,
+        "loyalty": 67,
+        "cattleSkill": 54,
+        "huntSkill": 44,
+        "guardDutyCount": 0,
+        "foodReceivedTotal": 11.02,
+        "whiskeyReceivedTotal": 0
+      }
+    ],
+    "losses": [
+      {
+        "week": 3,
+        "phase": "night",
+        "memberId": 2,
+        "name": "MARA QUILL",
+        "role": "scout",
+        "type": "desertion",
+        "detail": "MARA BREAKS AND SLIPS AWAY FROM CAMP BEFORE FIRST LIGHT.",
+        "snapshot": {
+          "id": 2,
+          "name": "MARA QUILL",
+          "role": "scout",
+          "alive": false,
+          "isLeader": false,
+          "fear": 100,
+          "morale": 0,
+          "hunger": 100,
+          "health": 0,
+          "loyalty": 76,
+          "cattleSkill": 55,
+          "huntSkill": 70,
+          "guardDutyCount": 0,
+          "foodReceivedTotal": 10.35,
+          "whiskeyReceivedTotal": 0
+        }
+      }
+    ]
+  },
+  "cattleLossHistory": [
+    {
+      "week": 2,
+      "phase": "night",
+      "count": 10,
+      "cause": "night-panic",
+      "condition": "lost",
+      "mode": "weakest"
+    },
+    {
+      "week": 3,
+      "phase": "night",
+      "count": 100,
+      "cause": "stampede",
+      "condition": "lost",
+      "mode": "weakest"
+    }
+  ],
+  "specialists": {
+    "hunter": [
+      {
+        "week": 2,
+        "memberId": 4,
+        "eligible": true,
+        "chance": 15,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 15% ROLL"
+      },
+      {
+        "week": 3,
+        "memberId": 4,
+        "eligible": true,
+        "chance": 6,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 6% ROLL"
+      },
+      {
+        "week": 4,
+        "memberId": 4,
+        "eligible": false,
+        "chance": 0,
+        "rolled": false,
+        "success": false,
+        "detail": "BLOCKED BY CURRENT CONDITION"
+      }
+    ],
+    "scout": [
+      {
+        "week": 2,
+        "memberId": 2,
+        "eligible": true,
+        "chance": 19,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 19% ROLL"
+      },
+      {
+        "week": 3,
+        "memberId": 2,
+        "eligible": true,
+        "chance": 7,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 7% ROLL"
+      },
+      {
+        "week": 4,
+        "memberId": null,
+        "eligible": false,
+        "chance": 0,
+        "rolled": false,
+        "success": false,
+        "detail": "NO SCOUT IN CREW"
+      }
+    ],
+    "drover": [
+      {
+        "week": 2,
+        "memberId": 3,
+        "eligible": true,
+        "chance": 16,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 16% ROLL"
+      },
+      {
+        "week": 3,
+        "memberId": 3,
+        "eligible": true,
+        "chance": 8,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 8% ROLL"
+      },
+      {
+        "week": 4,
+        "memberId": 3,
+        "eligible": false,
+        "chance": 0,
+        "rolled": false,
+        "success": false,
+        "detail": "BLOCKED BY CURRENT CONDITION"
+      }
+    ],
+    "hand": [
+      {
+        "week": 2,
+        "memberId": 5,
+        "eligible": true,
+        "chance": 20,
+        "rolled": true,
+        "success": true,
+        "detail": "REPAIRED 5 WAGON STRUCTURE"
+      },
+      {
+        "week": 3,
+        "memberId": 5,
+        "eligible": true,
+        "chance": 8,
+        "rolled": true,
+        "success": false,
+        "detail": "MISSED 8% ROLL"
+      },
+      {
+        "week": 4,
+        "memberId": 5,
+        "eligible": false,
+        "chance": 0,
+        "rolled": false,
+        "success": false,
+        "detail": "BLOCKED BY CURRENT CONDITION"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "week": 1,
+      "phase": "outfit",
+      "action": "start-drive",
+      "detail": ""
+    },
+    {
+      "week": 1,
+      "phase": "day",
+      "action": "travel",
+      "detail": ""
+    },
+    {
+      "week": 1,
+      "phase": "night",
+      "action": "night-drive",
+      "detail": ""
+    },
+    {
+      "week": 2,
+      "phase": "day",
+      "action": "travel",
+      "detail": ""
+    },
+    {
+      "week": 2,
+      "phase": "night",
+      "action": "night-drive",
+      "detail": ""
+    },
+    {
+      "week": 3,
+      "phase": "day",
+      "action": "travel",
+      "detail": ""
+    },
+    {
+      "week": 3,
+      "phase": "night",
+      "action": "night-drive",
+      "detail": ""
+    },
+    {
+      "week": 4,
+      "phase": "day",
+      "action": "travel",
+      "detail": ""
+    }
+  ],
+  "events": [
+    {
+      "week": 1,
+      "phase": "night",
+      "key": "blood-rain",
+      "title": "Blood-Rain",
+      "detail": ""
+    },
+    {
+      "week": 2,
+      "phase": "day",
+      "key": "blood-rain",
+      "title": "Blood-Rain",
+      "detail": ""
+    },
+    {
+      "week": 2,
+      "phase": "system",
+      "key": "landmark:painted-canyons",
+      "title": "Landmark Reached: Painted Canyons",
+      "detail": ""
+    },
+    {
+      "week": 3,
+      "phase": "day",
+      "key": "gravity-hiccup",
+      "title": "The Gravity Hiccup",
+      "detail": ""
+    },
+    {
+      "week": 3,
+      "phase": "night",
+      "key": "howling-in-the-dark",
+      "title": "Howling In The Dark",
+      "detail": ""
+    },
+    {
+      "week": 4,
+      "phase": "day",
+      "key": "blood-rain",
+      "title": "Blood-Rain",
+      "detail": ""
+    }
+  ],
+  "snapshots": [
+    {
+      "week": 1,
+      "phase": "outfit",
+      "label": "week-start",
+      "miles": 0,
+      "cattle": 500,
+      "crewAlive": 5,
+      "food": 80,
+      "blightedFood": 0,
+      "ammo": 10,
+      "supplies": 10,
+      "cash": 310,
+      "morale": 67,
+      "fear": 17,
+      "wagonCondition": 100,
+      "wagonSanctity": 100,
+      "herdHealth": 72,
+      "herdStress": 18,
+      "herdFatigue": 12,
+      "herdBlight": 0,
+      "rationLevel": "moderate"
+    },
+    {
+      "week": 2,
+      "phase": "day",
+      "label": "week-start",
+      "miles": 98,
+      "cattle": 500,
+      "crewAlive": 5,
+      "food": 66,
+      "blightedFood": 0,
+      "ammo": 10,
+      "supplies": 10,
+      "cash": 310,
+      "morale": 62,
+      "fear": 42,
+      "wagonCondition": 77,
+      "wagonSanctity": 96,
+      "herdHealth": 65,
+      "herdStress": 51,
+      "herdFatigue": 45,
+      "herdBlight": 4,
+      "rationLevel": "moderate"
+    },
+    {
+      "week": 3,
+      "phase": "day",
+      "label": "week-start",
+      "miles": 168,
+      "cattle": 490,
+      "crewAlive": 5,
+      "food": 52,
+      "blightedFood": 0,
+      "ammo": 10,
+      "supplies": 10,
+      "cash": 310,
+      "morale": 53,
+      "fear": 76,
+      "wagonCondition": 46,
+      "wagonSanctity": 92,
+      "herdHealth": 57,
+      "herdStress": 93,
+      "herdFatigue": 79,
+      "herdBlight": 8,
+      "rationLevel": "moderate"
+    },
+    {
+      "week": 4,
+      "phase": "day",
+      "label": "week-start",
+      "miles": 208,
+      "cattle": 390,
+      "crewAlive": 4,
+      "food": 38,
+      "blightedFood": 0,
+      "ammo": 10,
+      "supplies": 10,
+      "cash": 310,
+      "morale": 40,
+      "fear": 100,
+      "wagonCondition": 12,
+      "wagonSanctity": 85,
+      "herdHealth": 46,
+      "herdStress": 100,
+      "herdFatigue": 100,
+      "herdBlight": 8,
+      "rationLevel": "moderate"
+    },
+    {
+      "week": 4,
+      "phase": "ended",
+      "label": "run-end",
+      "miles": 220,
+      "cattle": 390,
+      "crewAlive": 4,
+      "food": 38,
+      "blightedFood": 0,
+      "ammo": 10,
+      "supplies": 10,
+      "cash": 310,
+      "morale": 35,
+      "fear": 100,
+      "wagonCondition": 0,
+      "wagonSanctity": 85,
+      "herdHealth": 38,
+      "herdStress": 100,
+      "herdFatigue": 100,
+      "herdBlight": 12,
+      "rationLevel": "moderate"
+    }
+  ],
+  "persistence": {
+    "attempted": true,
+    "saved": false,
+    "filePath": null,
+    "error": null
+  }
+}

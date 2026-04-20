@@ -1,0 +1,9 @@
+{
+  "runId": "report-smoke-test",
+  "persistence": {
+    "attempted": true,
+    "saved": true,
+    "filePath": "reports/deadwood-runs/report-smoke-test.json",
+    "error": null
+  }
+}

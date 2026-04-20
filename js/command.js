@@ -120,6 +120,7 @@ const Command = (() => {
     async function help() {
         const commands = {
             "RUN DEADWOOD": "RUN DEADWOOD TRAIL",
+            "TEST DEADWOOD": "RUN DEV MODE WITH PER-RUN REPORT OUTPUT",
             "EXIT": "EXIT FROM THE GAME",
             "CLEAR": "CLEAR THE TERMINAL SCREEN",
             "CRT": "ENABLE / DISABLE CRT EFFECT",
