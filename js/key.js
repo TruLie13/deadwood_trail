@@ -115,6 +115,7 @@ Term.handleEnter = () => {
     Term.input = Term.input.replace(/(?:\\[rn])+/g, "");
 
     if (App.deadwood?.isActive?.()) {
+        Term.ready = false;
         if (Term.input.trim().length > 0) {
             Term.pinPromptToTop?.();
         }

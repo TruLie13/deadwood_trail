@@ -108,6 +108,16 @@
         var _a;
         record[key] = ((_a = record[key]) !== null && _a !== void 0 ? _a : 0) + amount;
     }
+    function livingCrewPeakVitals(crew = state.crew) {
+        const living = livingCrew(crew);
+        if (living.length === 0) {
+            return null;
+        }
+        return {
+            maxHunger: Math.max(...living.map(member => member.hunger)),
+            minHealth: Math.min(...living.map(member => member.health)),
+        };
+    }
     function createRunId() {
         return `${new Date().toISOString().replace(/[:.]/g, "-")}_${Math.random().toString(36).slice(2, 8)}`;
     }
@@ -139,6 +149,8 @@
         };
     }
     function createEmptyRunReport() {
+        var _a, _b;
+        const livingPeakVitals = livingCrewPeakVitals();
         return {
             schemaVersion: 1,
             game: "deadwood-trail",
@@ -171,7 +183,7 @@
             },
             counters: {
                 dayActions: { travel: 0, hunt: 0, repair: 0, rest: 0, trade: 0, slaughter: 0 },
-                nightActions: { campfire: 0, guard: 0, whiskey: 0, occultist: 0, night: 0, trade: 0 },
+                nightActions: { campfire: 0, guard: 0, whiskey: 0, rite: 0, night: 0, trade: 0 },
                 rationChoices: { poor: 0, moderate: 0, well: 0 },
                 blight: { found: 0, taken: 0, left: 0, consumed: 0, contaminated: 0 },
                 hunt: { attempts: 0, fallbackAttempts: 0, shotsFired: 0, hits: 0, cleanFood: 0, blightedFood: 0 },
@@ -215,8 +227,8 @@
             peaks: {
                 maxFear: state.fear,
                 minMorale: state.morale,
-                maxCrewHunger: Math.max(...state.crew.map(member => member.hunger)),
-                minCrewHealth: Math.min(...state.crew.map(member => member.health)),
+                maxCrewHunger: (_a = livingPeakVitals === null || livingPeakVitals === void 0 ? void 0 : livingPeakVitals.maxHunger) !== null && _a !== void 0 ? _a : 0,
+                minCrewHealth: (_b = livingPeakVitals === null || livingPeakVitals === void 0 ? void 0 : livingPeakVitals.minHealth) !== null && _b !== void 0 ? _b : 0,
                 minWagonCondition: state.wagonCondition,
                 minWagonSanctity: state.wagonSanctity,
                 minHerdHealth: state.herdHealth,
@@ -263,12 +275,13 @@
         if (!currentRunReport) {
             return;
         }
-        const hungerValues = state.crew.map(member => member.hunger);
-        const healthValues = state.crew.map(member => member.health);
+        const livingPeakVitals = livingCrewPeakVitals();
         currentRunReport.peaks.maxFear = Math.max(currentRunReport.peaks.maxFear, state.fear);
         currentRunReport.peaks.minMorale = Math.min(currentRunReport.peaks.minMorale, state.morale);
-        currentRunReport.peaks.maxCrewHunger = Math.max(currentRunReport.peaks.maxCrewHunger, ...hungerValues);
-        currentRunReport.peaks.minCrewHealth = Math.min(currentRunReport.peaks.minCrewHealth, ...healthValues);
+        if (livingPeakVitals) {
+            currentRunReport.peaks.maxCrewHunger = Math.max(currentRunReport.peaks.maxCrewHunger, livingPeakVitals.maxHunger);
+            currentRunReport.peaks.minCrewHealth = Math.min(currentRunReport.peaks.minCrewHealth, livingPeakVitals.minHealth);
+        }
         currentRunReport.peaks.minWagonCondition = Math.min(currentRunReport.peaks.minWagonCondition, state.wagonCondition);
         currentRunReport.peaks.minWagonSanctity = Math.min(currentRunReport.peaks.minWagonSanctity, state.wagonSanctity);
         currentRunReport.peaks.minHerdHealth = Math.min(currentRunReport.peaks.minHerdHealth, state.herdHealth);
@@ -809,7 +822,7 @@
             ["pending blight", `${state.pendingBlightedFood}`],
             ["damned trades", `${state.damnedTradeCount}/3 used`],
             ["recent cattle loss", `${state.recentCattleLossWeeks} week(s)`],
-            ["occultist", debugBoolean(state.hasOccultist)],
+            ["rite ready", debugBoolean(state.hasOccultist)],
             ["hunt bonus", debugBoolean(state.occultHuntBonus)],
             ["night hunt penalty", debugBoolean(state.nightHuntPenalty)],
         ])}
@@ -1061,15 +1074,23 @@
         if (!member.alive) {
             return;
         }
-        const lossType = fate === "dies" ? "death" :
-            fate === "deserts" ? "desertion" :
+        const resolvedFate = member.isLeader && (fate === "deserts" || fate === "is exiled")
+            ? "dies"
+            : fate;
+        const resolvedDetail = member.isLeader && fate === "deserts"
+            ? `${crewFirstName(member)} REFUSES TO ABANDON THE DRIVE. ${crewFirstName(member)} GOES DOWN WITH THE SHIP BEFORE DAWN.`
+            : member.isLeader && fate === "is exiled"
+                ? `THE CREW TURNS MUTINOUS AGAINST THE TRAIL LEADER. IF THEY MEAN TO PUT ${crewFirstName(member)} OFF THE DRIVE, THEY DO NOT LET ${crewFirstName(member)} WALK AWAY FROM IT.`
+                : detail;
+        const lossType = resolvedFate === "dies" ? "death" :
+            resolvedFate === "deserts" ? "desertion" :
                 "exile";
         member.alive = false;
         member.health = 0;
         member.morale = 0;
         member.hunger = 100;
-        recordCrewLoss(member, lossType, detail);
-        state.pendingMessages.push(`CREW LOSS: ${member.name} ${fate.toUpperCase()}. ${detail}`);
+        recordCrewLoss(member, lossType, resolvedDetail);
+        state.pendingMessages.push(`CREW LOSS: ${member.name} ${resolvedFate.toUpperCase()}. ${resolvedDetail}`);
         if (aftermath) {
             affectCrew(aftermath);
         }
@@ -1985,7 +2006,7 @@
             "CAMPFIRE  - LIFT MORALE, ATTRACT ATTENTION",
             "GUARD     - PUSH FEAR DOWN, EXHAUST THE CREW",
             "WHISKEY   - BUY COURAGE WITH A BOTTLE",
-            "OCCULTIST - LEARN WHAT IS HUNTING YOU",
+            "RITE      - LEARN WHAT IS HUNTING YOU",
             "NIGHT     - KEEP MOVING THROUGH THE VEIL",
         ];
         if (state.canTrade) {
@@ -2833,7 +2854,7 @@
                 "CAMPFIRE  - RAISE MORALE, LOWER FEAR, RISK AN AMBUSH",
                 "GUARD     - LOWER FEAR, BUT TIRED CREW LOSSES STACK UP",
                 "WHISKEY   - SPEND WHISKEY FOR A MORALE SPIKE",
-                "OCCULTIST - TRADE COMFORT FOR SUPERNATURAL CLARITY",
+                "RITE      - TRADE COMFORT FOR SUPERNATURAL CLARITY",
                 "NIGHT     - NIGHT DRIVE FOR DISTANCE AND DANGER",
             ];
         }
@@ -3575,14 +3596,14 @@
             await endNight();
             return;
         }
-        if (input === "occultist") {
+        if (input === "rite" || input === "occultist") {
             if (currentRunReport) {
-                currentRunReport.counters.nightActions.occultist += 1;
+                currentRunReport.counters.nightActions.rite += 1;
             }
-            recordAction("night", "occultist");
-            state.lastNightAction = "occultist";
+            recordAction("night", "rite");
+            state.lastNightAction = "rite";
             if (!state.hasOccultist) {
-                await Term.writelns("NO OCCULTIST RIDES WITH YOU.");
+                await Term.writelns("NO RITE IS READY.");
                 await printNightPrompt();
                 return;
             }
@@ -3591,7 +3612,7 @@
             affectHerd({ stress: -12, health: -2, fatigue: -1 });
             const relieved = relieveInfectedCattle(percentOfHerd(6), 6);
             const calmed = calmTraumatizedCattle(percentOfHerd(8), 8);
-            await Term.writelns("THE OCCULTIST NAMES THE THING FOLLOWING THE WAGON. NOBODY SLEEPS BETTER, BUT EVERYONE SLEEPS WARNED.");
+            await Term.writelns("THE RITE NAMES THE THING FOLLOWING THE WAGON. NOBODY SLEEPS BETTER, BUT EVERYONE SLEEPS WARNED.");
             if (relieved > 0 || calmed > 0) {
                 await Term.writelns("A FEW OF THE GLASSY-EYED, SKITTISH CATTLE QUIET DOWN AFTER THE RITE.");
             }
@@ -4459,7 +4480,7 @@
             return ["poor", "moderate", "well", "back", "status", "help", "quit"];
         }
         if (state.phase === "night") {
-            const options = ["campfire", "guard", "whiskey", "occultist", "night", "status", "help", "quit"];
+            const options = ["campfire", "guard", "whiskey", "rite", "night", "status", "help", "quit"];
             if (state.canTrade) {
                 options.splice(4, 0, "trade");
             }
