@@ -1,6 +1,23 @@
 "use strict";
 var DeadwoodModel;
 (function (DeadwoodModel) {
+    function leaderHasRankProtection(crew) {
+        const living = crew.filter(member => member.alive);
+        const nonLeaders = living.filter(member => !member.isLeader);
+        return nonLeaders.length >= 2;
+    }
+    DeadwoodModel.leaderHasRankProtection = leaderHasRankProtection;
+    function crewCollapseRisk(member) {
+        const baseRisk = (100 - member.health) * 0.34 +
+            member.hunger * 0.24 +
+            member.fear * 0.22 +
+            (100 - member.morale) * 0.2;
+        const compoundedPressure = (member.health <= 30 ? 6 : 0) +
+            (member.hunger >= 75 ? 6 : 0) +
+            (member.fear >= 80 ? 6 : 0) +
+            (member.morale <= 25 ? 6 : 0);
+        return Number((baseRisk + compoundedPressure).toFixed(2));
+    }
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -276,7 +293,7 @@ var DeadwoodModel;
         const summary = summarizeCrew(living);
         const breaking = [...living].sort((left, right) => ((100 - right.health) + right.hunger + right.fear + (100 - right.morale)) -
             ((100 - left.health) + left.hunger + left.fear + (100 - left.morale)))[0];
-        const grievancePool = crewHands.length >= 2 ? crewHands : living;
+        const grievancePool = leaderHasRankProtection(living) ? crewHands : living;
         const mostWorked = [...grievancePool].sort((left, right) => right.guardDutyCount - left.guardDutyCount)[0];
         const leastWorked = [...grievancePool].sort((left, right) => left.guardDutyCount - right.guardDutyCount)[0];
         const mostFed = [...grievancePool].sort((left, right) => right.foodReceivedTotal - left.foodReceivedTotal)[0];
@@ -297,29 +314,165 @@ var DeadwoodModel;
         };
     }
     DeadwoodModel.crewWarningSignals = crewWarningSignals;
-    function assessCrewConsequence(crew, visibleMorale, visibleFear) {
+    function assessMutiny(crew, visibleMorale, visibleFear, week = 0, mutinyPressureState = 0) {
         const living = crew.filter(member => member.alive);
+        const blockers = [];
         if (living.length <= 1) {
-            return null;
+            return {
+                eligible: false,
+                targetId: null,
+                pressure: Math.max(0, mutinyPressureState),
+                chance: 0,
+                grievanceSignals: 0,
+                blockers: ["crew-too-small"],
+            };
         }
         const leader = living.find(member => member.isLeader);
         const crewHands = living.filter(member => !member.isLeader);
-        const grievancePool = crewHands.length >= 2 ? crewHands : living;
+        const grievancePool = leaderHasRankProtection(living) ? crewHands : living;
         const averageHunger = Math.round(living.reduce((sum, member) => sum + member.hunger, 0) / living.length);
         const averageLoyalty = Math.round(living.reduce((sum, member) => sum + member.loyalty, 0) / living.length);
         const mostOverworked = [...grievancePool].sort((left, right) => right.guardDutyCount - left.guardDutyCount || right.fear - left.fear)[0];
         const leastWorked = [...grievancePool].sort((left, right) => left.guardDutyCount - right.guardDutyCount || left.foodReceivedTotal - right.foodReceivedTotal)[0];
         const bestFed = [...grievancePool].sort((left, right) => right.foodReceivedTotal - left.foodReceivedTotal || left.hunger - right.hunger)[0];
         const leastFed = [...grievancePool].sort((left, right) => left.foodReceivedTotal - right.foodReceivedTotal || right.hunger - left.hunger)[0];
-        const whiskeyFavored = [...grievancePool].sort((left, right) => right.whiskeyReceivedTotal - left.whiskeyReceivedTotal || left.fear - right.fear)[0];
-        const whiskeyDry = [...grievancePool].sort((left, right) => left.whiskeyReceivedTotal - right.whiskeyReceivedTotal || right.fear - left.fear)[0];
-        const brittle = [...living].sort((left, right) => ((100 - right.health) + right.hunger + right.fear + (100 - right.morale)) -
-            ((100 - left.health) + left.hunger + left.fear + (100 - left.morale)))[0];
+        const highestMorale = [...grievancePool].sort((left, right) => right.morale - left.morale || left.fear - right.fear)[0];
+        const lowestMorale = [...grievancePool].sort((left, right) => left.morale - right.morale || right.fear - left.fear)[0];
         const guardGap = mostOverworked.guardDutyCount - leastWorked.guardDutyCount;
         const foodGap = bestFed.foodReceivedTotal - leastFed.foodReceivedTotal;
+        const moraleGap = highestMorale.morale - lowestMorale.morale;
+        const grievanceSignals = [
+            guardGap >= 2,
+            foodGap >= 4,
+            moraleGap >= 12,
+            averageHunger >= 62,
+        ].filter(Boolean).length;
+        const strongGrievance = guardGap >= 3 ||
+            foodGap >= 6 ||
+            moraleGap >= 18 ||
+            averageHunger >= 72;
+        const mutinyPressure = Math.max(0, mutinyPressureState) +
+            clamp(40 - visibleMorale, 0, 40) * 0.8 +
+            clamp(60 - averageLoyalty, 0, 60) * 0.9 +
+            clamp(averageHunger - 56, 0, 44) * 0.45 +
+            clamp(visibleFear - 62, 0, 38) * 0.15 +
+            (guardGap * 4.5) +
+            (foodGap * 1.4) +
+            (moraleGap * 0.7) +
+            (week >= 6 ? Math.min(week - 5, 8) * 1.5 : 0);
+        const socialBreak = visibleMorale <= 40 && averageLoyalty <= 68;
+        const pressureReady = mutinyPressureState >= 50 || mutinyPressure >= 62;
+        const leaderFailureSignal = strongGrievance ||
+            grievanceSignals >= 1 ||
+            averageHunger >= 64 ||
+            visibleFear >= 88 ||
+            mutinyPressureState >= 68 ||
+            mutinyPressure >= 78;
+        if (!leader) {
+            blockers.push("no-leader");
+        }
+        if (living.length < 3) {
+            blockers.push("crew-too-small");
+        }
+        if (week < 6) {
+            blockers.push("too-early");
+        }
+        if (!socialBreak && visibleMorale > 40) {
+            blockers.push("morale-too-stable");
+        }
+        if (!socialBreak && averageLoyalty > 68) {
+            blockers.push("loyalty-too-high");
+        }
+        if (!pressureReady) {
+            blockers.push("pressure-too-low");
+        }
+        if (!leaderFailureSignal) {
+            blockers.push("no-leader-failure-signal");
+        }
+        let chance = 0;
+        if (mutinyPressure >= 55) {
+            chance = 4;
+        }
+        if (mutinyPressure >= 65) {
+            chance = 8;
+        }
+        if (mutinyPressure >= 75) {
+            chance = 13;
+        }
+        if (mutinyPressure >= 85) {
+            chance = 19;
+        }
+        if (mutinyPressure >= 95) {
+            chance = 26;
+        }
+        chance += Math.floor(clamp(36 - visibleMorale, 0, 18) / 4);
+        chance += Math.floor(clamp(58 - averageLoyalty, 0, 18) / 4);
+        chance += Math.floor(clamp(averageHunger - 64, 0, 20) / 5);
+        chance += strongGrievance ? 4 : grievanceSignals > 0 ? 2 : 0;
+        chance += week >= 10 ? 2 : 0;
+        chance = clamp(Math.round(chance), 0, 35);
+        return {
+            eligible: blockers.length === 0 && socialBreak && pressureReady && leaderFailureSignal && chance > 0,
+            targetId: leader ? leader.id : null,
+            pressure: Math.round(mutinyPressure),
+            chance,
+            grievanceSignals,
+            blockers,
+        };
+    }
+    DeadwoodModel.assessMutiny = assessMutiny;
+    function assessCrewConsequence(crew, visibleMorale, visibleFear, week = 0, _mutinyPressureState = 0) {
+        const living = crew.filter(member => member.alive);
+        if (living.length <= 1) {
+            return null;
+        }
+        const crewHands = living.filter(member => !member.isLeader);
+        const grievancePool = leaderHasRankProtection(living) ? crewHands : living;
+        const averageHunger = Math.round(living.reduce((sum, member) => sum + member.hunger, 0) / living.length);
+        const averageLoyalty = Math.round(living.reduce((sum, member) => sum + member.loyalty, 0) / living.length);
+        const mostOverworked = [...grievancePool].sort((left, right) => right.guardDutyCount - left.guardDutyCount || right.fear - left.fear)[0];
+        const leastWorked = [...grievancePool].sort((left, right) => left.guardDutyCount - right.guardDutyCount || left.foodReceivedTotal - right.foodReceivedTotal)[0];
+        const bestFed = [...grievancePool].sort((left, right) => right.foodReceivedTotal - left.foodReceivedTotal || left.hunger - right.hunger)[0];
+        const leastFed = [...grievancePool].sort((left, right) => left.foodReceivedTotal - right.foodReceivedTotal || right.hunger - left.hunger)[0];
+        const highestMorale = [...grievancePool].sort((left, right) => right.morale - left.morale || left.fear - right.fear)[0];
+        const lowestMorale = [...grievancePool].sort((left, right) => left.morale - right.morale || right.fear - left.fear)[0];
+        const whiskeyFavored = [...grievancePool].sort((left, right) => right.whiskeyReceivedTotal - left.whiskeyReceivedTotal || left.fear - right.fear)[0];
+        const whiskeyDry = [...grievancePool].sort((left, right) => left.whiskeyReceivedTotal - right.whiskeyReceivedTotal || right.fear - left.fear)[0];
+        const brittle = [...living].sort((left, right) => crewCollapseRisk(right) - crewCollapseRisk(left) ||
+            ((100 - right.health) + right.hunger + right.fear + (100 - right.morale)) -
+                ((100 - left.health) + left.hunger + left.fear + (100 - left.morale)))[0];
+        const brittleNonLeader = crewHands.length > 0
+            ? [...crewHands].sort((left, right) => crewCollapseRisk(right) - crewCollapseRisk(left) ||
+                ((100 - right.health) + right.hunger + right.fear + (100 - right.morale)) -
+                    ((100 - left.health) + left.hunger + left.fear + (100 - left.morale)))[0]
+            : null;
+        const guardGap = mostOverworked.guardDutyCount - leastWorked.guardDutyCount;
+        const foodGap = bestFed.foodReceivedTotal - leastFed.foodReceivedTotal;
+        const moraleGap = highestMorale.morale - lowestMorale.morale;
         const whiskeyGap = whiskeyFavored.whiskeyReceivedTotal - whiskeyDry.whiskeyReceivedTotal;
-        if (leader && visibleMorale <= 24 && visibleFear >= 72 && averageLoyalty <= 42 && (guardGap >= 4 || foodGap >= 9)) {
-            return { type: "mutiny", targetId: leader.id };
+        function collapseAssessment(member) {
+            if (!member) {
+                return { shouldCollapse: false, fatal: false };
+            }
+            const severeCollapse = member.health <= 12 ||
+                member.hunger >= 94 ||
+                member.morale <= 6 ||
+                member.fear >= 95;
+            const softCollapseSignals = [
+                member.health <= 32,
+                member.hunger >= 80,
+                member.morale <= 22,
+                member.fear >= 82,
+            ].filter(Boolean).length;
+            const softCollapse = (crewCollapseRisk(member) >= 76 && softCollapseSignals >= 2) ||
+                (crewCollapseRisk(member) >= 86 && softCollapseSignals >= 1);
+            const fatal = member.health <= 15 ||
+                (member.hunger >= 92 && member.health <= 35) ||
+                (member.fear >= 95 && member.morale <= 8 && member.health <= 40);
+            return {
+                shouldCollapse: severeCollapse || softCollapse,
+                fatal,
+            };
         }
         if (visibleFear >= 74 && visibleMorale <= 34) {
             if (foodGap >= 9) {
@@ -332,17 +485,38 @@ var DeadwoodModel;
                 return { type: "paranoia-purge", targetId: leastWorked.id, fatal: false, cause: "guard" };
             }
         }
-        if (guardGap >= 4 && visibleMorale <= 34 && visibleFear >= 48) {
+        if (guardGap >= 3 && visibleMorale <= 42 && visibleFear >= 40) {
             return { type: "guard-exile", targetId: leastWorked.id };
         }
-        if (foodGap >= 10 && averageHunger >= 62 && visibleMorale <= 36) {
-            return { type: "food-exile", targetId: bestFed.id };
+        if ((foodGap >= 6 || moraleGap >= 18) && averageHunger >= 56 && visibleMorale <= 42) {
+            const favoredTarget = foodGap >= moraleGap ? bestFed : highestMorale;
+            return { type: "food-exile", targetId: favoredTarget.id };
         }
         if (whiskeyGap >= 4 && visibleMorale <= 30 && visibleFear >= 44) {
             return { type: "whiskey-desertion", targetId: whiskeyFavored.id };
         }
-        if (brittle && (brittle.health <= 6 || brittle.hunger >= 96 || brittle.morale <= 4 || brittle.fear >= 97)) {
-            return { type: "collapse", targetId: brittle.id, fatal: brittle.health <= 6 };
+        if (brittle) {
+            const brittleAssessment = collapseAssessment(brittle);
+            if (brittleAssessment.fatal) {
+                return { type: "collapse", targetId: brittle.id, fatal: true };
+            }
+            if (!brittleNonLeader) {
+                return null;
+            }
+            const brittleNonLeaderAssessment = collapseAssessment(brittleNonLeader);
+            if (brittleAssessment.shouldCollapse && brittle.isLeader) {
+                if (brittleNonLeaderAssessment.shouldCollapse) {
+                    return {
+                        type: "collapse",
+                        targetId: brittleNonLeader.id,
+                        fatal: brittleNonLeaderAssessment.fatal,
+                    };
+                }
+                return null;
+            }
+            if (brittleAssessment.shouldCollapse) {
+                return { type: "collapse", targetId: brittle.id, fatal: brittleAssessment.fatal };
+            }
         }
         return null;
     }

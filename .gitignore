@@ -131,3 +131,6 @@ dist
 
 # Local reference repo kept outside the shipped game history
 upstream-oregon-trail-browser/
+
+# Generated Deadwood run and simulation artifacts
+reports/

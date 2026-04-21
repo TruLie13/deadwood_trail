@@ -70,6 +70,8 @@ type GameState = {
     ammo: number;
     morale: number;
     fear: number;
+    mutinyPressure: number;
+    mutinyChance: number;
     wagonCondition: number;
     wagonSanctity: number;
     whiskey: number;
@@ -109,12 +111,13 @@ type StoreItem = "food" | "ammo" | "supplies" | "whiskey" | "grain" | "oil";
 type StatusSnapshot = Pick<
     GameState,
     "week" | "miles" | "cattle" | "food" | "blightedFood" | "ammo" | "supplies" | "cash" |
-    "morale" | "fear" | "wagonCondition" | "wagonSanctity" | "whiskey" | "blessedGrain" | "wardingOil" |
+    "morale" | "fear" | "mutinyPressure" | "mutinyChance" | "wagonCondition" | "wagonSanctity" | "whiskey" | "blessedGrain" | "wardingOil" |
     "herdHealth" | "herdStress" | "herdFatigue" | "herdBlight"
 >;
 
 type DeadwoodStartOptions = {
     debugMode?: boolean;
+    runMode?: DeadwoodRunMode;
 };
 
 type DeadwoodGameApi = {
@@ -123,6 +126,22 @@ type DeadwoodGameApi = {
     isActive: () => boolean;
     stop: (reason?: string) => Promise<void>;
     autocomplete: (input: string) => string | null;
+};
+
+type DeadwoodTermPort = {
+    clearScreen: () => void;
+    prompt: () => void;
+    hidePrompt: () => void;
+    writelns: (text: string) => Promise<void>;
+};
+
+type DeadwoodGameDependencies = {
+    term?: DeadwoodTermPort;
+    root?: WindowWithDeadwoodGame;
+    persistReport?: (report: DeadwoodRunReport) => Promise<SaveRunReportResponse>;
+    random?: () => number;
+    seed?: number | string | null;
+    hasDom?: boolean;
 };
 
 type SpecialistPassiveStatus = {
@@ -145,7 +164,9 @@ type WindowWithDeadwoodGame = Window & {
 };
 
 type RunOutcome = "victory" | "failure" | "quit";
-type FailureCause = "herd-lost" | "crew-breaks" | "wagon-breaks" | "sanctity-collapses" | "drive-stalls" | null;
+type DeadwoodRunMode = "normal" | "test" | "simulation";
+type FailureCause = "herd-lost" | "crew-breaks" | "wagon-breaks" | "sanctity-collapses" | null;
+type SanctityExposure = "stable" | "thin" | "exposed" | "open";
 type CrewLossType = "death" | "desertion" | "exile";
 type ReportPhase = Phase | "system";
 type CattleLossCause =
@@ -237,6 +258,8 @@ type DeadwoodSnapshot = {
     cash: number;
     morale: number;
     fear: number;
+    mutinyPressure: number;
+    mutinyChance: number;
     wagonCondition: number;
     wagonSanctity: number;
     herdHealth: number;
@@ -260,7 +283,8 @@ type DeadwoodRunReport = {
     schemaVersion: number;
     game: "deadwood-trail";
     runId: string;
-    mode: "normal" | "test";
+    seed: number | string | null;
+    mode: DeadwoodRunMode;
     startedAt: string;
     endedAt: string | null;
     durationMs: number | null;
@@ -282,6 +306,8 @@ type DeadwoodRunReport = {
         cashRemaining: number;
         morale: number;
         fear: number;
+        mutinyPressure: number;
+        mutinyChance: number;
         wagonCondition: number;
         wagonSanctity: number;
         landmarksReached: string[];
@@ -327,6 +353,15 @@ type DeadwoodRunReport = {
             collapseDeath: number;
             collapseDesertion: number;
         };
+        mutiny: {
+            eligibleChecks: number;
+            rolls: number;
+            totalChance: number;
+            peakChance: number;
+            blockedByExile: number;
+            blockedByCollapse: number;
+            blockedByOther: number;
+        };
         cattleLosses: {
             total: number;
             byCause: Record<CattleLossCause, number>;
@@ -370,7 +405,27 @@ type DeadwoodRunReport = {
     };
 };
 
-(() => {
+type DeadwoodEngineApi = DeadwoodGameApi & {
+    getStateSnapshot: () => GameState;
+    getRunReport: () => DeadwoodRunReport | null;
+    getAvailableCommands: () => string[];
+    getSeed: () => number | string | null;
+};
+
+namespace DeadwoodEngine {
+    export function createGame(deps: DeadwoodGameDependencies = {}): DeadwoodEngineApi {
+    const Term: DeadwoodTermPort = deps.term ?? {
+        clearScreen: () => undefined,
+        prompt: () => undefined,
+        hidePrompt: () => undefined,
+        writelns: async () => undefined,
+    };
+    const root = deps.root ?? ((typeof window !== "undefined" ? window : globalThis) as unknown as WindowWithDeadwoodGame);
+    const hasDom = deps.hasDom ?? (typeof window !== "undefined" && typeof document !== "undefined");
+    const random = deps.random ?? Math.random;
+    const seed = deps.seed ?? null;
+    const persistReport = deps.persistReport ?? defaultPersistReport;
+
     const STARTING_CASH = 450;
     const STARTER_FOOD = 80;
     const STARTER_AMMO = 10;
@@ -391,6 +446,27 @@ type DeadwoodRunReport = {
     const DROVER_RECOVER_MAX = 2;
     const HAND_REPAIR_MIN = 4;
     const HAND_REPAIR_MAX = 7;
+
+    async function defaultPersistReport(report: DeadwoodRunReport): Promise<SaveRunReportResponse> {
+        if (typeof fetch !== "function") {
+            return { ok: false, error: "REPORT SAVE UNAVAILABLE" };
+        }
+
+        const response = await fetch("/api/deadwood/reports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(report),
+        });
+        const result = await response.json() as SaveRunReportResponse;
+        if (!response.ok) {
+            return {
+                ok: false,
+                error: result.error ?? "REPORT SAVE FAILED",
+            };
+        }
+
+        return result;
+    }
 
     const LANDMARKS: Landmark[] = [
         {
@@ -468,9 +544,9 @@ type DeadwoodRunReport = {
     ];
 
     const state: GameState = createInitialState();
-    const root = window as WindowWithDeadwoodGame;
     let lastStatusSnapshot: StatusSnapshot | null = null;
     let debugMode = false;
+    let runMode: DeadwoodRunMode = "normal";
     let debugOverlayEl: HTMLDivElement | null = null;
     const debugCardOpenState: Record<string, boolean> = {};
     let specialistPassiveStatus = createInitialSpecialistPassiveStatus();
@@ -495,7 +571,7 @@ type DeadwoodRunReport = {
     }
 
     function createRunId(): string {
-        return `${new Date().toISOString().replace(/[:.]/g, "-")}_${Math.random().toString(36).slice(2, 8)}`;
+        return `${new Date().toISOString().replace(/[:.]/g, "-")}_${random().toString(36).slice(2, 8)}`;
     }
 
     function createCrewSnapshot(member: CrewMember): DeadwoodRunCrewSnapshot {
@@ -533,7 +609,8 @@ type DeadwoodRunReport = {
             schemaVersion: 1,
             game: "deadwood-trail",
             runId: createRunId(),
-            mode: debugMode ? "test" : "normal",
+            seed,
+            mode: runMode,
             startedAt: new Date().toISOString(),
             endedAt: null,
             durationMs: null,
@@ -555,6 +632,8 @@ type DeadwoodRunReport = {
                 cashRemaining: state.cash,
                 morale: state.morale,
                 fear: state.fear,
+                mutinyPressure: state.mutinyPressure,
+                mutinyChance: state.mutinyChance,
                 wagonCondition: state.wagonCondition,
                 wagonSanctity: state.wagonSanctity,
                 landmarksReached: [...state.reachedLandmarks],
@@ -576,6 +655,15 @@ type DeadwoodRunReport = {
                     paranoiaExile: 0,
                     collapseDeath: 0,
                     collapseDesertion: 0,
+                },
+                mutiny: {
+                    eligibleChecks: 0,
+                    rolls: 0,
+                    totalChance: 0,
+                    peakChance: 0,
+                    blockedByExile: 0,
+                    blockedByCollapse: 0,
+                    blockedByOther: 0,
                 },
                 cattleLosses: {
                     total: 0,
@@ -697,6 +785,8 @@ type DeadwoodRunReport = {
             cash: state.cash,
             morale: state.morale,
             fear: state.fear,
+            mutinyPressure: state.mutinyPressure,
+            mutinyChance: state.mutinyChance,
             wagonCondition: state.wagonCondition,
             wagonSanctity: state.wagonSanctity,
             herdHealth: state.herdHealth,
@@ -786,6 +876,40 @@ type DeadwoodRunReport = {
         }
     }
 
+    function recordMutinyAssessment(assessment: DeadwoodModel.MutinyAssessment) {
+        state.mutinyChance = assessment.chance;
+
+        if (!currentRunReport || !assessment.eligible) {
+            return;
+        }
+
+        currentRunReport.counters.mutiny.eligibleChecks += 1;
+        currentRunReport.counters.mutiny.rolls += 1;
+        currentRunReport.counters.mutiny.totalChance += assessment.chance;
+        currentRunReport.counters.mutiny.peakChance = Math.max(
+            currentRunReport.counters.mutiny.peakChance,
+            assessment.chance,
+        );
+    }
+
+    function recordMutinyBlocked(outcome: NonNullable<DeadwoodModel.CrewConsequence> | null) {
+        if (!currentRunReport || !outcome) {
+            return;
+        }
+
+        if (outcome.type === "guard-exile" || outcome.type === "food-exile") {
+            currentRunReport.counters.mutiny.blockedByExile += 1;
+            return;
+        }
+
+        if (outcome.type === "collapse") {
+            currentRunReport.counters.mutiny.blockedByCollapse += 1;
+            return;
+        }
+
+        currentRunReport.counters.mutiny.blockedByOther += 1;
+    }
+
     function recordCattleLoss(count: number, cause: CattleLossCause, condition: CowCondition, mode: DeadwoodModel.RemovalMode | "collapsed") {
         if (!currentRunReport || count <= 0) {
             return;
@@ -823,13 +947,8 @@ type DeadwoodRunReport = {
         currentRunReport.persistence.attempted = true;
 
         try {
-            const response = await fetch("/api/deadwood/reports", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(currentRunReport),
-            });
-            const result = await response.json() as SaveRunReportResponse;
-            if (!response.ok || !result.ok || !result.filePath) {
+            const result = await persistReport(currentRunReport);
+            if (!result.ok || !result.filePath) {
                 throw new Error(result.error ?? "REPORT SAVE FAILED");
             }
 
@@ -894,6 +1013,8 @@ type DeadwoodRunReport = {
             cashRemaining: state.cash,
             morale: state.morale,
             fear: state.fear,
+            mutinyPressure: state.mutinyPressure,
+            mutinyChance: state.mutinyChance,
             wagonCondition: state.wagonCondition,
             wagonSanctity: state.wagonSanctity,
             landmarksReached: [...state.reachedLandmarks],
@@ -932,6 +1053,8 @@ type DeadwoodRunReport = {
             ammo: STARTER_AMMO,
             morale: crewSummary.morale,
             fear: crewSummary.fear,
+            mutinyPressure: 0,
+            mutinyChance: 0,
             wagonCondition: 100,
             wagonSanctity: 100,
             whiskey: 0,
@@ -990,7 +1113,11 @@ type DeadwoodRunReport = {
     }
 
     function randInt(min: number, max: number): number {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
+        return Math.floor(random() * (max - min + 1)) + min;
+    }
+
+    function cloneValue<T>(value: T): T {
+        return JSON.parse(JSON.stringify(value)) as T;
     }
 
     function clampStat(value: number): number {
@@ -998,6 +1125,10 @@ type DeadwoodRunReport = {
     }
 
     function ensureDebugOverlay(): HTMLDivElement {
+        if (!hasDom) {
+            throw new Error("Debug overlay is unavailable without DOM support.");
+        }
+
         if (debugOverlayEl) {
             return debugOverlayEl;
         }
@@ -1210,6 +1341,10 @@ type DeadwoodRunReport = {
     }
 
     function syncDebugOverlay() {
+        if (!hasDom) {
+            return;
+        }
+
         if (!debugMode) {
             if (debugOverlayEl) {
                 debugOverlayEl.innerHTML = "";
@@ -1223,7 +1358,7 @@ type DeadwoodRunReport = {
 
         const crewSummary = DeadwoodModel.summarizeCrew(state.crew);
         const crewSignals = DeadwoodModel.crewWarningSignals(state.crew, state.cattle);
-        const crewConsequence = DeadwoodModel.assessCrewConsequence(state.crew, state.morale, state.fear);
+        const crewConsequence = DeadwoodModel.assessCrewConsequence(state.crew, state.morale, state.fear, state.week, state.mutinyPressure);
         const ambient = westwardAmbientPressure();
         const averages = crewAverages();
         const leader = findLivingLeader();
@@ -1383,7 +1518,7 @@ type DeadwoodRunReport = {
             fear: 12,
             morale: 78,
             hunger: 18,
-            health: 88,
+            health: 100,
             cattleSkill: 92,
             huntSkill: 58,
             loyalty: 92,
@@ -1487,7 +1622,11 @@ type DeadwoodRunReport = {
             return;
         }
 
-        if (member.morale <= 10 && member.fear >= 90) {
+        const leaderCanBreakBySuicide =
+            !member.isLeader ||
+            livingCrew().length === 1;
+
+        if (leaderCanBreakBySuicide && member.morale <= 10 && member.fear >= 90) {
             member.alive = false;
             member.health = 0;
             member.morale = 0;
@@ -1546,13 +1685,22 @@ type DeadwoodRunReport = {
             return;
         }
 
+        const leaderCanBeExiledWithoutRankProtection =
+            member.isLeader &&
+            fate === "is exiled" &&
+            !DeadwoodModel.leaderHasRankProtection(state.crew);
         const resolvedFate =
-            member.isLeader && (fate === "deserts" || fate === "is exiled")
+            member.isLeader && (
+                fate === "deserts" ||
+                (fate === "is exiled" && !leaderCanBeExiledWithoutRankProtection)
+            )
                 ? "dies"
                 : fate;
         const resolvedDetail =
             member.isLeader && fate === "deserts"
                 ? `${crewFirstName(member)} REFUSES TO ABANDON THE DRIVE. ${crewFirstName(member)} GOES DOWN WITH THE SHIP BEFORE DAWN.`
+                : leaderCanBeExiledWithoutRankProtection
+                    ? `WITH ONLY A RAGGED REMNANT OF THE CREW LEFT, ${crewFirstName(member)}'S TITLE CARRIES NO WEIGHT. THE LAST HANDS PUT ${crewFirstName(member)} OFF THE DRIVE LIKE ANY OTHER BURDEN.`
                 : member.isLeader && fate === "is exiled"
                     ? `THE CREW TURNS MUTINOUS AGAINST THE TRAIL LEADER. IF THEY MEAN TO PUT ${crewFirstName(member)} OFF THE DRIVE, THEY DO NOT LET ${crewFirstName(member)} WALK AWAY FROM IT.`
                     : detail;
@@ -1591,6 +1739,100 @@ type DeadwoodRunReport = {
         };
     }
 
+    function crewGrievanceMetrics() {
+        const living = livingCrew();
+        const crewHands = living.filter(member => !member.isLeader);
+        const grievancePool = DeadwoodModel.leaderHasRankProtection(living) ? crewHands : living;
+
+        if (grievancePool.length === 0) {
+            return {
+                averageHunger: 100,
+                averageLoyalty: 0,
+                guardGap: 0,
+                foodGap: 0,
+                moraleGap: 0,
+            };
+        }
+
+        const averageHunger = Math.round(living.reduce((sum, member) => sum + member.hunger, 0) / living.length);
+        const averageLoyalty = Math.round(living.reduce((sum, member) => sum + member.loyalty, 0) / living.length);
+        const mostOverworked = [...grievancePool].sort((left, right) => right.guardDutyCount - left.guardDutyCount || right.fear - left.fear)[0];
+        const leastWorked = [...grievancePool].sort((left, right) => left.guardDutyCount - right.guardDutyCount || left.foodReceivedTotal - right.foodReceivedTotal)[0];
+        const bestFed = [...grievancePool].sort((left, right) => right.foodReceivedTotal - left.foodReceivedTotal || left.hunger - right.hunger)[0];
+        const leastFed = [...grievancePool].sort((left, right) => left.foodReceivedTotal - right.foodReceivedTotal || right.hunger - left.hunger)[0];
+        const highestMorale = [...grievancePool].sort((left, right) => right.morale - left.morale || left.fear - right.fear)[0];
+        const lowestMorale = [...grievancePool].sort((left, right) => left.morale - right.morale || right.fear - left.fear)[0];
+
+        return {
+            averageHunger,
+            averageLoyalty,
+            guardGap: mostOverworked.guardDutyCount - leastWorked.guardDutyCount,
+            foodGap: bestFed.foodReceivedTotal - leastFed.foodReceivedTotal,
+            moraleGap: highestMorale.morale - lowestMorale.morale,
+        };
+    }
+
+    function resolveMutinyPressure() {
+        const living = livingCrew();
+        if (living.length <= 1) {
+            state.mutinyPressure = 0;
+            state.mutinyChance = 0;
+            return;
+        }
+
+        const metrics = crewGrievanceMetrics();
+        let pressureDelta = -2;
+
+        if (state.rationLevel === "poor") {
+            pressureDelta += 8;
+        } else if (state.rationLevel === "well") {
+            pressureDelta -= 6;
+        } else {
+            pressureDelta -= 2;
+        }
+
+        if (metrics.averageHunger >= 65) {
+            pressureDelta += 6;
+        } else if (metrics.averageHunger <= 35) {
+            pressureDelta -= 2;
+        }
+
+        if (state.morale <= 35) {
+            pressureDelta += 8;
+        } else if (state.morale >= 55) {
+            pressureDelta -= 3;
+        }
+
+        if (metrics.averageLoyalty <= 55) {
+            pressureDelta += 8;
+        } else if (metrics.averageLoyalty >= 70) {
+            pressureDelta -= 3;
+        }
+
+        if (metrics.guardGap >= 3 || metrics.foodGap >= 6 || metrics.moraleGap >= 18) {
+            pressureDelta += 6;
+        }
+
+        if (state.lastDayAction === "travel") {
+            pressureDelta += 2;
+        } else if (state.lastDayAction === "rest") {
+            pressureDelta -= 4;
+        }
+
+        if (state.lastNightAction === "night") {
+            pressureDelta += 5;
+        } else if (
+            state.lastNightAction === "campfire" ||
+            state.lastNightAction === "whiskey" ||
+            state.lastNightAction === "rite" ||
+            (state.lastNightAction === "trade" && state.tradeLocation === "el-paso")
+        ) {
+            pressureDelta -= 6;
+        }
+
+        state.mutinyPressure = clamp(state.mutinyPressure + pressureDelta, 0, 100);
+    }
+
     function affectCrew(stats: { morale?: number; fear?: number; hunger?: number; health?: number; loyalty?: number }) {
         for (const member of livingCrew()) {
             member.morale += (stats.morale ?? 0) + randInt(-1, 1);
@@ -1616,10 +1858,10 @@ type DeadwoodRunReport = {
                 0.58;
             const moraleBias = level === "poor" ? ((100 - member.morale) / 120) : ((100 - member.morale) / 210);
             const hungerBias =
-                level === "poor" ? ((100 - member.hunger) / 140) :
-                level === "well" ? ((100 - member.hunger) / 260) :
-                ((100 - member.hunger) / 185);
-            const fortuneShift = Math.random() * (spread * 2) - spread;
+                level === "poor" ? (member.hunger / 140) :
+                level === "well" ? (member.hunger / 260) :
+                (member.hunger / 185);
+            const fortuneShift = random() * (spread * 2) - spread;
             const share = Math.max(0.4, baseline + moraleBias + hungerBias + fortuneShift);
             member.foodReceivedTotal += share;
             if (level === "poor") {
@@ -1730,7 +1972,14 @@ type DeadwoodRunReport = {
         }
 
         const servings = Math.min(2, living.length);
-        const chosen = [...living].sort(() => Math.random() - 0.5).slice(0, servings);
+        const shuffled = [...living];
+        for (let index = shuffled.length - 1; index > 0; index -= 1) {
+            const swapIndex = Math.floor(random() * (index + 1));
+            const current = shuffled[index];
+            shuffled[index] = shuffled[swapIndex];
+            shuffled[swapIndex] = current;
+        }
+        const chosen = shuffled.slice(0, servings);
         for (const member of chosen) {
             member.whiskeyReceivedTotal += 1;
             member.morale += randInt(7, 12);
@@ -1745,10 +1994,19 @@ type DeadwoodRunReport = {
 
     function assignGuardDuty(): CrewMember[] {
         const living = livingCrew();
-        const sorted = [...living].sort((left, right) => left.guardDutyCount - right.guardDutyCount || right.health - left.health);
+        const pressuredDuty = state.fear >= 60 || living.length <= 3;
+        const sorted = pressuredDuty
+            ? [...living].sort((left, right) =>
+                ((right.health + right.morale + right.loyalty) - (right.fear * 0.9)) -
+                ((left.health + left.morale + left.loyalty) - (left.fear * 0.9)) ||
+                left.guardDutyCount - right.guardDutyCount
+            )
+            : [...living].sort((left, right) => left.guardDutyCount - right.guardDutyCount || right.health - left.health);
         const chosen: CrewMember[] = [];
         while (chosen.length < Math.min(2, sorted.length)) {
-            const band = sorted.slice(0, Math.min(3, sorted.length));
+            const band = pressuredDuty
+                ? sorted.slice(0, Math.min(2, sorted.length))
+                : sorted.slice(0, Math.min(3, sorted.length));
             const pick = band[randInt(0, band.length - 1)];
             if (!chosen.includes(pick)) {
                 chosen.push(pick);
@@ -1766,25 +2024,58 @@ type DeadwoodRunReport = {
     }
 
     function resolveCrewConsequences() {
-        const outcome = DeadwoodModel.assessCrewConsequence(state.crew, state.morale, state.fear);
-        if (!outcome) {
-            return;
-        }
+        const mutinyAssessment = DeadwoodModel.assessMutiny(
+            state.crew,
+            state.morale,
+            state.fear,
+            state.week,
+            state.mutinyPressure,
+        );
+        recordMutinyAssessment(mutinyAssessment);
 
-        recordCrewConsequence(outcome);
+        if (mutinyAssessment.eligible && mutinyAssessment.targetId !== null && chance(mutinyAssessment.chance)) {
+            const outcome: NonNullable<DeadwoodModel.CrewConsequence> = {
+                type: "mutiny",
+                targetId: mutinyAssessment.targetId,
+            };
+            recordCrewConsequence(outcome);
 
-        const target = state.crew.find(member => member.id === outcome.targetId && member.alive);
-        if (!target) {
-            return;
-        }
+            const target = state.crew.find(member => member.id === outcome.targetId && member.alive);
+            if (!target) {
+                return;
+            }
 
-        if (outcome.type === "mutiny") {
             removeCrewMember(
                 target,
                 "dies",
                 "THE CREW TURNS ON THE TRAIL LEADER IN THE DARK. WHEN IT IS OVER, THE DRIVE HAS NO TRUE HAND ON THE REINS.",
                 { morale: -10, fear: 16, loyalty: -8 },
             );
+            return;
+        }
+
+        const outcome = DeadwoodModel.assessCrewConsequence(state.crew, state.morale, state.fear, state.week, state.mutinyPressure);
+        if (!outcome) {
+            return;
+        }
+
+        if (mutinyAssessment.eligible && outcome.type === "collapse") {
+            state.mutinyPressure = clamp(state.mutinyPressure + 4, 0, 100);
+            state.pendingMessages.push(
+                "THE CAMP NEARLY SHATTERS BEFORE DAWN, BUT THE CREW TURNS ITS ANGER INTO A HARDER SILENCE. WHATEVER BREAK COMES NEXT MAY NOT FALL ON THE WEAKEST HAND."
+            );
+            recordEvent("mutiny-standoff", "Mutiny Standoff", "", "night");
+            return;
+        }
+
+        if (mutinyAssessment.eligible) {
+            recordMutinyBlocked(outcome);
+        }
+
+        recordCrewConsequence(outcome);
+
+        const target = state.crew.find(member => member.id === outcome.targetId && member.alive);
+        if (!target) {
             return;
         }
 
@@ -1802,7 +2093,7 @@ type DeadwoodRunReport = {
             removeCrewMember(
                 target,
                 "is exiled",
-                `${crewFirstName(target)} HAS BEEN EATING TOO WELL WHILE THE OTHERS COUNT BONES AND PORTIONS. THE CREW WILL NOT TOLERATE IT ANY LONGER.`,
+                `${crewFirstName(target)} HAS BEEN LIVING TOO EASY WHILE THE OTHERS COUNT BONES, DUTIES, AND SMALL INJUSTICES. THE CREW WILL NOT TOLERATE IT ANY LONGER.`,
                 { morale: -5, fear: 7, loyalty: -7 },
             );
             return;
@@ -1835,14 +2126,16 @@ type DeadwoodRunReport = {
             return;
         }
 
-        removeCrewMember(
-            target,
-            outcome.fatal ? "dies" : "deserts",
-            outcome.fatal
-                ? `${crewFirstName(target)} FINALLY COLLAPSES AFTER TOO MANY BAD WEEKS ON THE TRAIL.`
-                : `${crewFirstName(target)} BREAKS AND SLIPS AWAY FROM CAMP BEFORE FIRST LIGHT.`,
-            { morale: -6, fear: 8, loyalty: -4 },
-        );
+        if (outcome.type === "collapse") {
+            removeCrewMember(
+                target,
+                outcome.fatal ? "dies" : "deserts",
+                outcome.fatal
+                    ? `${crewFirstName(target)} FINALLY COLLAPSES AFTER TOO MANY BAD WEEKS ON THE TRAIL.`
+                    : `${crewFirstName(target)} BREAKS AND SLIPS AWAY FROM CAMP BEFORE FIRST LIGHT.`,
+                { morale: -6, fear: 8, loyalty: -4 },
+            );
+        }
     }
 
     function crewWarningMessages(): string[] {
@@ -2185,6 +2478,92 @@ type DeadwoodRunReport = {
         return DeadwoodModel.westwardAmbientPressure(state.miles);
     }
 
+    function sanctityExposureLevel(): SanctityExposure {
+        if (state.wagonSanctity <= 0) {
+            return "open";
+        }
+
+        if (state.wagonSanctity <= 20) {
+            return "exposed";
+        }
+
+        if (state.wagonSanctity <= 50) {
+            return "thin";
+        }
+
+        return "stable";
+    }
+
+    function sanctityEncounterBonus(): number {
+        const exposure = sanctityExposureLevel();
+        if (exposure === "open") {
+            return 10;
+        }
+        if (exposure === "exposed") {
+            return 5;
+        }
+        if (exposure === "thin") {
+            return 2;
+        }
+        return 0;
+    }
+
+    function sanctityEventBonus(): number {
+        const exposure = sanctityExposureLevel();
+        if (exposure === "open") {
+            return 8;
+        }
+        if (exposure === "exposed") {
+            return 4;
+        }
+        if (exposure === "thin") {
+            return 2;
+        }
+        return 0;
+    }
+
+    function sanctityNightEventBonus(): number {
+        const exposure = sanctityExposureLevel();
+        if (exposure === "open") {
+            return 20;
+        }
+        if (exposure === "exposed") {
+            return 12;
+        }
+        if (exposure === "thin") {
+            return 5;
+        }
+        return 0;
+    }
+
+    function sanctityStampedeThresholds(): { fear: number; herdStress: number } {
+        const exposure = sanctityExposureLevel();
+        if (exposure === "open") {
+            return { fear: 55, herdStress: 50 };
+        }
+        if (exposure === "exposed") {
+            return { fear: 62, herdStress: 58 };
+        }
+        if (exposure === "thin") {
+            return { fear: 68, herdStress: 62 };
+        }
+        return { fear: 70, herdStress: 65 };
+    }
+
+    function sanctityStampedeLossMultiplier(): number {
+        const exposure = sanctityExposureLevel();
+        if (exposure === "open") {
+            return 1.3;
+        }
+        if (exposure === "exposed") {
+            return 1.15;
+        }
+        if (exposure === "thin") {
+            return 1.05;
+        }
+        return 1;
+    }
+
     function distributedStatDelta(cow: Cow, stat: "health" | "stress" | "fatigue" | "blight", base: number): number {
         if (base === 0) {
             return 0;
@@ -2238,7 +2617,7 @@ type DeadwoodRunReport = {
     }
 
     function chance(percent: number): boolean {
-        return Math.random() * 100 < percent;
+        return random() * 100 < percent;
     }
 
     function locationName(): string {
@@ -2297,6 +2676,8 @@ type DeadwoodRunReport = {
             cash: state.cash,
             morale: state.morale,
             fear: state.fear,
+            mutinyPressure: state.mutinyPressure,
+            mutinyChance: state.mutinyChance,
             wagonCondition: state.wagonCondition,
             wagonSanctity: state.wagonSanctity,
             whiskey: state.whiskey,
@@ -2348,7 +2729,7 @@ type DeadwoodRunReport = {
             `WARDING OIL ${state.wardingOil}${deltaText(state.wardingOil, previous?.wardingOil)}`,
             `CASH ${state.cash}${deltaText(state.cash, previous?.cash)}`,
             "",
-            `CREW: MORALE ${state.morale}${deltaText(state.morale, previous?.morale)}   FEAR ${state.fear}${deltaText(state.fear, previous?.fear)} (${fearLabel()})`,
+            `CREW: MORALE ${state.morale}${deltaText(state.morale, previous?.morale)}   FEAR ${state.fear}${deltaText(state.fear, previous?.fear)} (${fearLabel()})   MUTINY ${state.mutinyPressure}${deltaText(state.mutinyPressure, previous?.mutinyPressure)}`,
             `WAGON: STRUCTURE ${state.wagonCondition}${deltaText(state.wagonCondition, previous?.wagonCondition)}   SANCTITY ${state.wagonSanctity}${deltaText(state.wagonSanctity, previous?.wagonSanctity)}`,
             "",
             `CATTLE ${state.cattle}${deltaText(state.cattle, previous?.cattle)}`,
@@ -2393,7 +2774,9 @@ type DeadwoodRunReport = {
             await Term.writelns(`${boxLabel("WARNING")} WAGON CONDITION IS LOW. PHYSICAL REPAIRS ARE STRONGLY ADVISED.`);
         }
 
-        if (state.wagonSanctity <= 15) {
+        if (state.wagonSanctity <= 0) {
+            await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS GONE. THE WARD HAS FAILED, AND FEAR AND NIGHT THREATS NOW HIT HARDER.`);
+        } else if (state.wagonSanctity <= 15) {
             await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS CRITICAL. THE VEIL IS ALMOST THROUGH.`);
         } else if (state.wagonSanctity <= 30) {
             await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS LOW. THE CREW FEELS EXPOSED TO THE DARK.`);
@@ -2401,6 +2784,12 @@ type DeadwoodRunReport = {
 
         if (state.fear >= 70) {
             await Term.writelns(`${boxLabel("WARNING")} FEAR IS HIGH ENOUGH TO TRIGGER A SERIOUS STAMPEDE.`);
+        }
+
+        if (state.mutinyPressure >= 85) {
+            await Term.writelns(`${boxLabel("WARNING")} MUTINY PRESSURE IS CRITICAL. THE CREW'S FAITH IN THE LEADER IS NEAR BREAKING.`);
+        } else if (state.mutinyPressure >= 60) {
+            await Term.writelns(`${boxLabel("WARNING")} MUTINY PRESSURE IS HIGH. HUNGER, RESENTMENT, AND BAD LEADERSHIP ARE STARTING TO COMPOUND.`);
         }
 
         if (state.herdStress >= 70) {
@@ -2790,7 +3179,7 @@ type DeadwoodRunReport = {
     }
 
     function applyScoutFind(scout: CrewMember): { detail: string; message: string } {
-        const roll = Math.random();
+        const roll = random();
         if (roll < 0.7) {
             const supplies = randInt(3, 6);
             state.supplies += supplies;
@@ -3318,6 +3707,7 @@ type DeadwoodRunReport = {
             return;
         }
 
+        runMode = options?.runMode ?? (options?.debugMode ? "test" : "normal");
         setDebugMode(Boolean(options?.debugMode));
         resetState();
         initializeRunReport();
@@ -3691,7 +4081,7 @@ type DeadwoodRunReport = {
             if (detourPenalty > 0) {
                 miles = Math.max(12, miles - detourPenalty);
             }
-            const wear = randInt(3, 7);
+            const wear = randInt(1, 4);
             const fearGain = 2;
             state.miles += miles;
             state.wagonCondition -= wear;
@@ -4341,7 +4731,7 @@ type DeadwoodRunReport = {
             state.nightHuntPenalty = true;
             const miles = travelMiles(18, 36);
             const fearGain = 16;
-            const wear = randInt(5, 11);
+            const wear = randInt(4, 8);
             state.miles += miles;
             affectCrew({ fear: fearGain, morale: -3, hunger: 2, health: -1 });
             state.wagonCondition -= wear;
@@ -4577,6 +4967,7 @@ type DeadwoodRunReport = {
 
     async function endNight() {
         resolveNightDecay();
+        resolveMutinyPressure();
         resolveCrewConsequences();
         normalizeState();
         resolveCrewRolePassives();
@@ -4601,6 +4992,8 @@ type DeadwoodRunReport = {
     }
 
     function normalizeState() {
+        state.mutinyPressure = clamp(state.mutinyPressure, 0, 100);
+        state.mutinyChance = clamp(state.mutinyChance, 0, 100);
         state.wagonCondition = clamp(state.wagonCondition, 0, 100);
         state.wagonSanctity = clamp(state.wagonSanctity, 0, 100);
         state.food = Math.max(0, state.food);
@@ -4620,7 +5013,7 @@ type DeadwoodRunReport = {
 
     function resolveNightDecay() {
         affectCrew({ fear: 4, hunger: 1 });
-        state.wagonSanctity -= 4;
+        state.wagonSanctity -= 1;
         const ambient = westwardAmbientPressure();
         if (ambient.sanctity !== 0) {
             state.wagonSanctity += ambient.sanctity;
@@ -4643,7 +5036,7 @@ type DeadwoodRunReport = {
             state.pendingMessages.push("CAUSE: THIS FAR WEST, THE TRAIL ITSELF WEARS ON THE DRIVE. EVEN RESTED WEEKS FEED FEAR, BLIGHT, AND THE LOSS OF SANCTITY.");
         }
 
-        if (chance(30)) {
+        if (state.lastNightAction !== "night" && chance(30)) {
             if (state.wardingOil > 0) {
                 state.wardingOil -= 1;
                 affectCrew({ fear: -4 });
@@ -4664,14 +5057,18 @@ type DeadwoodRunReport = {
             state.pendingMessages.push("CAUSE: WITH NO TRUE DROVER LEFT, THE HERD STARTS LOSING DISCIPLINE EVEN ON QUIETER WEEKS.");
         }
 
-        if (!designatedHand()) {
-            state.wagonCondition -= 5;
-            state.pendingMessages.push("CAUSE: WITH NO TRUE HAND LEFT, BOLTS LOOSEN, WOOD WARPS, AND THE WAGON WEARS FASTER.");
-        }
-
-        if (state.wagonSanctity < 50) {
-            affectCrew({ fear: 8, morale: -2 });
+        const sanctityExposure = sanctityExposureLevel();
+        if (sanctityExposure === "thin") {
+            affectCrew({ fear: 4, morale: -1 });
             state.pendingMessages.push("CAUSE: THE WAGON FEELS THIN AND EXPOSED. THE CREW CAN SENSE THE SANCTITY FAILING.");
+        } else if (sanctityExposure === "exposed") {
+            affectCrew({ fear: 7, morale: -2 });
+            affectHerd({ stress: 2 });
+            state.pendingMessages.push("CAUSE: THE WARD HAS THINNED TO A THREAD. EVERY SOUND IN THE DARK FEELS CLOSER, AND THE HERD PICKS UP THE SAME PANIC.");
+        } else if (sanctityExposure === "open") {
+            affectCrew({ fear: 12, morale: -4, health: -1 });
+            affectHerd({ stress: 5, blight: 1 });
+            state.pendingMessages.push("CAUSE: THE WARD IS GONE. WITHOUT SANCTITY TO TURN THE DARK, EVERY NIGHT THING PRESSES RIGHT UP AGAINST THE CAMP.");
         }
 
         const starvingCrew = livingCrew().filter(member => member.hunger >= 85);
@@ -4822,27 +5219,30 @@ type DeadwoodRunReport = {
             }
         }
 
-        if (blockedEncounter !== "salt-chapel" && state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45) && chance(16)) {
+        const encounterBonus = sanctityEncounterBonus();
+        const eventBonus = sanctityEventBonus();
+
+        if (blockedEncounter !== "salt-chapel" && state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45) && chance(16 + encounterBonus)) {
             await saltChapelEncounter();
-        } else if (blockedEncounter !== "ash-drowner" && state.miles >= 520 && (state.fear >= 45 || state.herdStress >= 55 || state.wagonSanctity <= 55) && chance(18)) {
+        } else if (blockedEncounter !== "ash-drowner" && state.miles >= 520 && (state.fear >= 45 || state.herdStress >= 55 || state.wagonSanctity <= 55) && chance(18 + encounterBonus)) {
             await ashDrownerEncounter();
-        } else if (blockedEncounter !== "hollow-drover" && state.miles >= 310 && (state.recentCattleLossWeeks > 0 || state.herdStress >= 45 || state.fear >= 40) && chance(12)) {
+        } else if (blockedEncounter !== "hollow-drover" && state.miles >= 310 && (state.recentCattleLossWeeks > 0 || state.herdStress >= 45 || state.fear >= 40) && chance(12 + encounterBonus)) {
             await hollowDroverEncounter();
-        } else if (chance(22)) {
+        } else if (chance(22 + eventBonus)) {
             await bloodRainEvent();
-        } else if (chance(20)) {
+        } else if (chance(20 + eventBonus)) {
             await gravityHiccupEvent();
-        } else if (chance(18)) {
+        } else if (chance(18 + eventBonus)) {
             await whisperingCacheEvent();
-        } else if (chance(18)) {
+        } else if (chance(18 + eventBonus)) {
             await hoofRotEvent();
-        } else if (chance(16)) {
+        } else if (chance(16 + eventBonus)) {
             await driftEvent();
         }
     }
 
     async function nightEvent() {
-        if (chance(50)) {
+        if (chance(50 + sanctityNightEventBonus())) {
             if (chance(55)) {
                 await howlingEvent();
             } else {
@@ -4929,12 +5329,16 @@ type DeadwoodRunReport = {
     }
 
     async function stampedeCheck() {
-        if (state.fear <= 70 && state.herdStress <= 65) {
+        const thresholds = sanctityStampedeThresholds();
+        const exposure = sanctityExposureLevel();
+
+        if (state.fear <= thresholds.fear && state.herdStress <= thresholds.herdStress) {
             await Term.writelns("THE CATTLE SHIVER BUT HOLD THEIR GROUND.");
             return;
         }
 
         let lost = Math.max(4, Math.round(state.cattle * ((Math.max(state.fear, state.herdStress) - 55) / 220)));
+        lost = Math.max(1, Math.round(lost * sanctityStampedeLossMultiplier()));
 
         if (state.morale >= 65) {
             lost = Math.max(1, Math.floor(lost * 0.6));
@@ -4964,6 +5368,11 @@ type DeadwoodRunReport = {
         });
         const actuallyLost = removeCattle(doomed.length, "lost", "weakest", "stampede");
         affectHerd({ stress: 8, fatigue: 6 });
+        if (exposure === "open") {
+            await Term.writelns("WITH THE WARD GONE, THE HERD BOLTS HARDER AND FARTHER BEFORE ANYONE CAN TURN IT.");
+        } else if (exposure === "exposed" || exposure === "thin") {
+            await Term.writelns("THIN WARDING LETS THE PANIC TRAVEL FAST THROUGH THE LINE.");
+        }
         await Term.writelns(`STAMPEDE. YOU LOSE ${actuallyLost} HEAD OF CATTLE.`);
     }
 
@@ -5096,30 +5505,6 @@ type DeadwoodRunReport = {
                 "FAILURE: WAGON BREAKS.",
                 "THE WAGON FRAME GIVES OUT.",
                 "WITHOUT THE WAGON, THE DRIVE CANNOT CONTINUE.",
-            ]);
-            await stop();
-            return true;
-        }
-
-        if (state.wagonSanctity <= 0) {
-            runResolution = { outcome: "failure", failureCause: "sanctity-collapses" };
-            await printBlock([
-                "",
-                "FAILURE: SANCTITY COLLAPSES.",
-                "THE WAGON'S WARDING FAILS.",
-                "ONCE THE BARRIER GOES DARK, THE VEIL DOES THE REST.",
-            ]);
-            await stop();
-            return true;
-        }
-
-        if (state.week > 20 && state.food <= 0) {
-            runResolution = { outcome: "failure", failureCause: "drive-stalls" };
-            await printBlock([
-                "",
-                "FAILURE: THE DRIVE STALLS.",
-                "THE DRIVE COLLAPSES UNDER HUNGER AND DELAY.",
-                "YOU STILL HAVE CATTLE, BUT NOT A CARAVAN CAPABLE OF FINISHING THE TRAIL.",
             ]);
             await stop();
             return true;
@@ -5274,14 +5659,36 @@ type DeadwoodRunReport = {
         return [];
     }
 
-    const api: DeadwoodGameApi = {
+    const api: DeadwoodEngineApi = {
         start,
         handleInput,
         isActive: () => state.active,
         stop,
         autocomplete,
+        getStateSnapshot: () => cloneValue(state),
+        getRunReport: () => currentRunReport ? cloneValue(currentRunReport) : null,
+        getAvailableCommands: () => [...getAutocompleteOptions()],
+        getSeed: () => seed,
     };
 
-    root.DeadwoodGame = api;
-    App.deadwood = api;
-})();
+    return api;
+    }
+}
+
+const deadwoodGlobal = globalThis as typeof globalThis & {
+    DeadwoodEngine?: typeof DeadwoodEngine;
+};
+deadwoodGlobal.DeadwoodEngine = DeadwoodEngine;
+
+if (typeof window !== "undefined") {
+    const browserRoot = window as WindowWithDeadwoodGame;
+    const browserGame = DeadwoodEngine.createGame({
+        term: Term,
+        root: browserRoot,
+        hasDom: true,
+    });
+    browserRoot.DeadwoodGame = browserGame;
+    if (typeof App !== "undefined") {
+        App.deadwood = browserGame;
+    }
+}

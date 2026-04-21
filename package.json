@@ -20,6 +20,7 @@
     "build": "npm run build:ts && node ./scripts/build.js",
     "build:ts": "tsc -p tsconfig.json",
     "dev": "npm run build:ts && node ./scripts/dev.js",
+    "sim": "npm run build:ts && node ./scripts/sim.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build:ts && node --test tests/*.test.js"
   }

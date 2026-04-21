@@ -290,7 +290,7 @@ test('crewWarningSignals flags a breaking member and unfair distributions', () =
   assert.equal(signals.severeOverCapacity, true);
 });
 
-test('assessCrewConsequence selects mutiny against the leader under severe instability', () => {
+test('assessMutiny marks the leader as the mutiny target under severe instability', () => {
   const crew = [
     makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, loyalty: 35 }),
     makeCrewMember(2, { loyalty: 38, guardDutyCount: 5, fear: 70 }),
@@ -299,8 +299,24 @@ test('assessCrewConsequence selects mutiny against the leader under severe insta
     makeCrewMember(5, { loyalty: 40, foodReceivedTotal: 0 }),
   ];
 
-  const result = DeadwoodModel.assessCrewConsequence(crew, 22, 78);
-  assert.deepEqual(result, { type: 'mutiny', targetId: 1 });
+  const result = DeadwoodModel.assessMutiny(crew, 22, 78, 6, 86);
+  assert.equal(result.eligible, true);
+  assert.equal(result.targetId, 1);
+  assert.ok(result.chance >= 20);
+});
+
+test('assessMutiny does not allow mutiny before the trail has gone bad for a while', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, loyalty: 35 }),
+    makeCrewMember(2, { loyalty: 38, guardDutyCount: 5, fear: 70 }),
+    makeCrewMember(3, { loyalty: 40, guardDutyCount: 4, fear: 65 }),
+    makeCrewMember(4, { loyalty: 41, foodReceivedTotal: 10 }),
+    makeCrewMember(5, { loyalty: 40, foodReceivedTotal: 0 }),
+  ];
+
+  const result = DeadwoodModel.assessMutiny(crew, 22, 78, 4, 86);
+  assert.equal(result.eligible, false);
+  assert.ok(result.blockers.includes('too-early'));
 });
 
 test('assessCrewConsequence exiles the best-fed hand before a general collapse when hunger resentment dominates', () => {
@@ -353,4 +369,83 @@ test('assessCrewConsequence falls back to individual collapse when one hand is p
 
   const result = DeadwoodModel.assessCrewConsequence(crew, 48, 40);
   assert.deepEqual(result, { type: 'collapse', targetId: 2, fatal: true });
+});
+
+test('assessCrewConsequence can trigger a soft collapse from compounded pressure before a single stat hits an extreme cutoff', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true }),
+    makeCrewMember(2, { name: 'MARA QUILL', health: 24, hunger: 84, morale: 18, fear: 78 }),
+    makeCrewMember(3),
+    makeCrewMember(4),
+    makeCrewMember(5),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 40, 52);
+  assert.deepEqual(result, { type: 'collapse', targetId: 2, fatal: false });
+});
+
+test('assessCrewConsequence does not target the leader for a nonfatal collapse while another crew member can desert', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, health: 50, hunger: 97, morale: 3, fear: 98 }),
+    makeCrewMember(2, { name: 'MARA QUILL', health: 24, hunger: 84, morale: 18, fear: 78 }),
+    makeCrewMember(3),
+    makeCrewMember(4),
+    makeCrewMember(5),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 18, 82);
+  assert.deepEqual(result, { type: 'collapse', targetId: 2, fatal: false });
+});
+
+test('assessCrewConsequence can still target the leader for a fatal collapse', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, health: 5, hunger: 90, morale: 18, fear: 80 }),
+    makeCrewMember(2),
+    makeCrewMember(3),
+    makeCrewMember(4),
+    makeCrewMember(5),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 40, 52);
+  assert.deepEqual(result, { type: 'collapse', targetId: 1, fatal: true });
+});
+
+test('leader rank protection only holds while at least two non-leaders remain', () => {
+  const protectedCrew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true }),
+    makeCrewMember(2, { role: 'scout' }),
+    makeCrewMember(3, { role: 'hand' }),
+  ];
+  const collapsedCrew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true }),
+    makeCrewMember(2, { role: 'hand' }),
+  ];
+
+  assert.equal(DeadwoodModel.leaderHasRankProtection(protectedCrew), true);
+  assert.equal(DeadwoodModel.leaderHasRankProtection(collapsedCrew), false);
+});
+
+test('assessCrewConsequence can target the leader for exile once only one hand remains', () => {
+  const crew = [
+    makeCrewMember(1, {
+      name: 'EZEKIEL VALE',
+      role: 'leader',
+      isLeader: true,
+      foodReceivedTotal: 16,
+      hunger: 50,
+      morale: 30,
+      loyalty: 55,
+    }),
+    makeCrewMember(2, {
+      name: 'RUTH CALDWELL',
+      role: 'hand',
+      foodReceivedTotal: 0,
+      hunger: 90,
+      morale: 20,
+      loyalty: 55,
+    }),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 34, 44);
+  assert.deepEqual(result, { type: 'food-exile', targetId: 1 });
 });
