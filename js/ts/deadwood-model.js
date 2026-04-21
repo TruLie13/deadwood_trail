@@ -307,7 +307,7 @@ var DeadwoodModel;
             breakingMemberName: breaking && (breaking.morale <= 18 || breaking.fear >= 85 || breaking.hunger >= 80) ? breaking.name : null,
             guardImbalanceName: guardGap >= 4 ? leastWorked.name : null,
             portionImbalanceName: foodGap >= 10 && summary.morale <= 42 && summary.fear >= 35 ? mostFed.name : null,
-            whiskeyImbalance: whiskeyGap >= 4 && summary.morale <= 38 && summary.fear >= 38,
+            whiskeyImbalance: whiskeyGap >= 3 && summary.morale <= 44 && summary.fear >= 34,
             noLeader: !living.some(member => member.isLeader),
             overCapacity: cattle > summary.handlingCapacity + 50,
             severeOverCapacity: summary.handlingCapacity > 0 ? cattle > Math.round(summary.handlingCapacity * 1.25) : cattle > 0,
@@ -454,21 +454,25 @@ var DeadwoodModel;
             if (!member) {
                 return { shouldCollapse: false, fatal: false };
             }
+            const groupBreaking = visibleMorale <= 32 ||
+                visibleFear >= 70 ||
+                averageHunger >= 68;
             const severeCollapse = member.health <= 12 ||
                 member.hunger >= 94 ||
                 member.morale <= 6 ||
                 member.fear >= 95;
             const softCollapseSignals = [
-                member.health <= 32,
-                member.hunger >= 80,
-                member.morale <= 22,
-                member.fear >= 82,
+                member.health <= 28,
+                member.hunger >= 84,
+                member.morale <= 18,
+                member.fear >= 86,
             ].filter(Boolean).length;
-            const softCollapse = (crewCollapseRisk(member) >= 76 && softCollapseSignals >= 2) ||
-                (crewCollapseRisk(member) >= 86 && softCollapseSignals >= 1);
-            const fatal = member.health <= 15 ||
-                (member.hunger >= 92 && member.health <= 35) ||
-                (member.fear >= 95 && member.morale <= 8 && member.health <= 40);
+            const softCollapse = groupBreaking &&
+                ((crewCollapseRisk(member) >= 84 && softCollapseSignals >= 2) ||
+                    (crewCollapseRisk(member) >= 92 && softCollapseSignals >= 1));
+            const fatal = member.health <= 18 ||
+                (member.hunger >= 90 && member.health <= 40) ||
+                (member.fear >= 92 && member.morale <= 10 && member.health <= 45);
             return {
                 shouldCollapse: severeCollapse || softCollapse,
                 fatal,
@@ -478,22 +482,21 @@ var DeadwoodModel;
             if (foodGap >= 9) {
                 return { type: "paranoia-purge", targetId: bestFed.id, fatal: visibleFear >= 82, cause: "food" };
             }
-            if (whiskeyGap >= 4) {
+            if (whiskeyGap >= 3) {
                 return { type: "paranoia-purge", targetId: whiskeyFavored.id, fatal: visibleFear >= 84, cause: "whiskey" };
             }
             if (guardGap >= 5) {
                 return { type: "paranoia-purge", targetId: leastWorked.id, fatal: false, cause: "guard" };
             }
         }
-        if (guardGap >= 3 && visibleMorale <= 42 && visibleFear >= 40) {
+        if (guardGap >= 3 && visibleMorale <= 48 && (visibleFear >= 40 || averageHunger >= 62)) {
             return { type: "guard-exile", targetId: leastWorked.id };
         }
-        if ((foodGap >= 6 || moraleGap >= 18) && averageHunger >= 56 && visibleMorale <= 42) {
-            const favoredTarget = foodGap >= moraleGap ? bestFed : highestMorale;
-            return { type: "food-exile", targetId: favoredTarget.id };
-        }
-        if (whiskeyGap >= 4 && visibleMorale <= 30 && visibleFear >= 44) {
+        if (whiskeyGap >= 2 && visibleMorale <= 38 && (visibleFear >= 38 || averageLoyalty <= 60)) {
             return { type: "whiskey-desertion", targetId: whiskeyFavored.id };
+        }
+        if (foodGap >= 5 && averageHunger >= 48 && visibleMorale <= 50) {
+            return { type: "food-exile", targetId: bestFed.id };
         }
         if (brittle) {
             const brittleAssessment = collapseAssessment(brittle);
@@ -670,21 +673,21 @@ var DeadwoodModel;
         return "FOR ALL THE LOSSES, THE STOCK THAT SURVIVED STILL LOOK LIKE THEY BELONG TO THE LIVING WORLD.";
     }
     DeadwoodModel.herdCompositionLine = herdCompositionLine;
-    function damnedTradeCost(tradeTime, item, tradesUsed) {
-        const tier = clamp(tradesUsed, 0, 2);
+    function damnedTradeCost(tradeTime, item, itemPurchases) {
+        const repeats = clamp(itemPurchases, 0, 2);
         const baseCost = tradeTime === "day"
             ? 1
             : item === "cache"
                 ? 1
                 : 2;
-        return baseCost + tier;
+        return baseCost * (2 ** repeats);
     }
     DeadwoodModel.damnedTradeCost = damnedTradeCost;
     function westwardAmbientPressure(miles) {
         if (miles >= 760) {
             return {
                 fear: 3,
-                sanctity: -4,
+                sanctity: -8,
                 herdBlight: 2,
                 herdStress: 2,
                 label: "salt-flats",
@@ -693,7 +696,7 @@ var DeadwoodModel;
         if (miles >= 520) {
             return {
                 fear: 2,
-                sanctity: -3,
+                sanctity: -6,
                 herdBlight: 1,
                 herdStress: 1,
                 label: "staked-plains",
@@ -702,7 +705,7 @@ var DeadwoodModel;
         if (miles >= 310) {
             return {
                 fear: 1,
-                sanctity: -2,
+                sanctity: -4,
                 herdBlight: 0,
                 herdStress: 0,
                 label: "western",

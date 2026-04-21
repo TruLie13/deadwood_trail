@@ -128,7 +128,7 @@ function loadEngine() {
 const POLICY_PROFILES = {
     cautious: {
         name: "cautious",
-        outfit: { food: 190, ammo: 18, supplies: 28, whiskey: 1, grain: 2, oil: 3 },
+        outfit: { food: 190, ammo: 18, supplies: 28, whiskey: 2, grain: 2, oil: 3 },
         ration: { poorAt: 18, wellAt: 120, fearForWell: 44, moraleForWell: 58, fatigueForWell: 48 },
         repair: { dayConditionAt: 60, daySanctityAt: 62, ironAt: 58, reinforceAt: 48, patchSuppliesAt: 4 },
         scout: { detourConditionAt: 58, detourSanctityAt: 60, detourStressAt: 50, detourBlightAt: 18, detourFearAt: 50 },
@@ -139,7 +139,7 @@ const POLICY_PROFILES = {
     },
     balanced: {
         name: "balanced",
-        outfit: { food: 160, ammo: 28, supplies: 22, whiskey: 2, grain: 2, oil: 2 },
+        outfit: { food: 160, ammo: 28, supplies: 22, whiskey: 3, grain: 2, oil: 2 },
         ration: { poorAt: 24, wellAt: 140, fearForWell: 55, moraleForWell: 48, fatigueForWell: 60 },
         repair: { dayConditionAt: 48, daySanctityAt: 50, ironAt: 48, reinforceAt: 40, patchSuppliesAt: 4 },
         scout: { detourConditionAt: 42, detourSanctityAt: 45, detourStressAt: 58, detourBlightAt: 24, detourFearAt: 58 },
@@ -161,13 +161,13 @@ const POLICY_PROFILES = {
     },
     mutiny: {
         name: "mutiny",
-        outfit: { food: 125, ammo: 18, supplies: 14, whiskey: 0, grain: 0, oil: 1 },
+        outfit: { food: 125, ammo: 18, supplies: 14, whiskey: 3, grain: 0, oil: 1 },
         ration: { poorAt: 82, wellAt: 999, fearForWell: 999, moraleForWell: -999, fatigueForWell: 999 },
         repair: { dayConditionAt: 26, daySanctityAt: 24, ironAt: 18, reinforceAt: 18, patchSuppliesAt: 4 },
         scout: { detourConditionAt: 18, detourSanctityAt: 18, detourStressAt: 88, detourBlightAt: 36, detourFearAt: 88 },
         blight: { takeAtFood: 58, takeAtFoodNoAmmo: 90 },
         day: { tradeFoodAt: 22, tradeAmmoAt: 2, tradeSuppliesAt: 2, tradeSanctityAt: 18, damnedTradeFoodAt: 10, damnedTradeSanctityAt: 18, huntFoodAt: 20, restFatigueAt: 90, restHealthAt: 26, restFearAt: 96, restMoraleAt: 8, slaughterFoodAt: 4 },
-        night: { tradeSanctityAt: 10, tradeHealthAt: 18, tradeFearAt: 96, riteSanctityAt: 0, riteFearAt: 101, guardStressAt: 101, guardFatigueAt: 101, guardFearAt: 101, whiskeyMoraleAt: 0, whiskeyFearMax: -1, nightWeekAt: 1, nightMilesPerWeek: 60, nightFearMax: 100, nightConditionAt: 0, nightFatigueMax: 100, campfireMoraleAt: 0, campfireFearMax: -1 },
+        night: { tradeSanctityAt: 10, tradeHealthAt: 18, tradeFearAt: 96, riteSanctityAt: 0, riteFearAt: 101, guardStressAt: 101, guardFatigueAt: 101, guardFearAt: 101, whiskeyMoraleAt: 48, whiskeyFearMax: 100, nightWeekAt: 1, nightMilesPerWeek: 60, nightFearMax: 100, nightConditionAt: 0, nightFatigueMax: 100, campfireMoraleAt: 0, campfireFearMax: -1 },
         trade: { elPasoFoodAt: 18, elPasoAmmoAt: 2, elPasoSuppliesAt: 2, elPasoOilSanctityAt: 18, elPasoVigilSanctityAt: 14, elPasoTonicHealthAt: 18, elPasoTonicFatigueAt: 90, elPasoCharmFearAt: 96, elPasoCharmStressAt: 96, damnedMaxTrades: 0, damnedNightSanctityAt: 18, damnedNightFoodAt: 10, damnedNightBlightAt: 40, damnedNightStressAt: 84, damnedDaySanctityAt: 18, damnedDaySuppliesAt: 2, damnedDayFearAt: 96 },
     },
     greedy: {
@@ -183,7 +183,7 @@ const POLICY_PROFILES = {
     },
     desperate: {
         name: "desperate",
-        outfit: { food: 145, ammo: 24, supplies: 18, whiskey: 1, grain: 1, oil: 1 },
+        outfit: { food: 145, ammo: 24, supplies: 18, whiskey: 2, grain: 1, oil: 1 },
         ration: { poorAt: 26, wellAt: 150, fearForWell: 60, moraleForWell: 42, fatigueForWell: 62 },
         repair: { dayConditionAt: 42, daySanctityAt: 44, ironAt: 42, reinforceAt: 34, patchSuppliesAt: 4 },
         scout: { detourConditionAt: 34, detourSanctityAt: 38, detourStressAt: 66, detourBlightAt: 28, detourFearAt: 66 },
@@ -449,16 +449,21 @@ function chooseNightCommand(state, policy) {
         return "rite";
     }
 
+    const whiskeyFearTrigger = Math.max(38, policy.night.guardFearAt - 10);
+    if (
+        state.whiskey > 0 &&
+        (state.morale <= policy.night.whiskeyMoraleAt || state.fear >= whiskeyFearTrigger) &&
+        state.fear <= policy.night.whiskeyFearMax
+    ) {
+        return "whiskey";
+    }
+
     if (
         state.herdStress >= policy.night.guardStressAt ||
         state.herdFatigue >= policy.night.guardFatigueAt ||
         state.fear >= policy.night.guardFearAt
     ) {
         return "guard";
-    }
-
-    if (state.whiskey > 0 && state.morale <= policy.night.whiskeyMoraleAt && state.fear <= policy.night.whiskeyFearMax) {
-        return "whiskey";
     }
 
     if (
@@ -1109,6 +1114,24 @@ function topFailure(summary) {
     return entry ? { cause: entry[0], count: entry[1] } : { cause: "", count: 0 };
 }
 
+function crewConsequenceDisplay(summary) {
+    const orderedKeys = [
+        "mutiny",
+        "guardExile",
+        "foodExile",
+        "whiskeyDesertion",
+        "paranoiaDeath",
+        "paranoiaExile",
+        "collapseDeath",
+        "collapseDesertion",
+    ];
+
+    return orderedKeys
+        .map(key => [key, summary.crewConsequences[key] || 0])
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => `${key} ${count}`);
+}
+
 function buildComparisonRows(policySummaries) {
     return policySummaries.map(summary => {
         const failure = topFailure(summary);
@@ -1125,10 +1148,18 @@ function buildComparisonRows(policySummaries) {
             mutinyRunRate: summary.mutiny.runRate,
             mutinyEligibleRunRate: summary.mutiny.eligibleRunRate,
             averageMutinyChance: summary.mutiny.averageChanceWhenEligible,
+            guardExile: summary.crewConsequences.guardExile,
+            foodExile: summary.crewConsequences.foodExile,
+            whiskeyDesertion: summary.crewConsequences.whiskeyDesertion,
+            paranoiaDeath: summary.crewConsequences.paranoiaDeath,
+            paranoiaExile: summary.crewConsequences.paranoiaExile,
+            collapseDeath: summary.crewConsequences.collapseDeath,
+            collapseDesertion: summary.crewConsequences.collapseDesertion,
             averageMorale: summary.emotions.averageMorale,
             averageFear: summary.emotions.averageFear,
             averageWagonCondition: summary.wagon.averageCondition,
             averageWagonSanctity: summary.wagon.averageSanctity,
+            wagonBreakRate: percentage(summary.failures["wagon-breaks"] || 0, summary.overall.runs),
             blightTakenRate: summary.resources.blightTakenRate,
             cattleSpreadP10P90: summary.consistency.cattleP10toP90Spread,
             weekSpreadP10P90: summary.consistency.weekP10toP90Spread,
@@ -1180,6 +1211,10 @@ function buildComparisonMarkdown(policySummaries, config) {
         right.winRate - left.winRate ||
         right.averageCattleRemaining - left.averageCattleRemaining
     );
+    const crewBreakdownLines = policySummaries.map(summary => {
+        const pieces = crewConsequenceDisplay(summary);
+        return `- ${summary.policy}: ${pieces.length > 0 ? pieces.join(", ") : "no crew consequences recorded"}`;
+    });
 
     return [
         "# Deadwood Policy Comparison",
@@ -1200,8 +1235,12 @@ function buildComparisonMarkdown(policySummaries, config) {
         "## Policy Rows",
         "",
         ...rows.map(row =>
-            `- ${row.policy}: week ${row.averageWeekEnded}, miles ${row.averageMilesReached}, cattle ${row.averageCattleRemaining}, morale ${row.averageMorale}, fear ${row.averageFear}, mutiny ${row.mutinyRunRate}% (eligible ${row.mutinyEligibleRunRate}%, avg chance ${row.averageMutinyChance}%), wagon<50 week ${row.wagon50Week || "never"}, sanctity<50 week ${row.sanctity50Week || "never"}, blight-taken ${row.blightTakenRate}%`
+            `- ${row.policy}: week ${row.averageWeekEnded}, miles ${row.averageMilesReached}, cattle ${row.averageCattleRemaining}, morale ${row.averageMorale}, fear ${row.averageFear}, mutiny ${row.mutinyRunRate}% (eligible ${row.mutinyEligibleRunRate}%, avg chance ${row.averageMutinyChance}%), wagon-breaks ${row.wagonBreakRate}%, wagon<50 week ${row.wagon50Week || "never"}, sanctity<50 week ${row.sanctity50Week || "never"}, blight-taken ${row.blightTakenRate}%`
         ),
+        "",
+        "## Crew Consequences",
+        "",
+        ...crewBreakdownLines,
         "",
     ].join("\n");
 }

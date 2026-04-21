@@ -633,6 +633,14 @@ var DeadwoodEngine;
                 activeScoutDetourMiles: 0,
                 cattleSkillMilestones: 0,
                 damnedTradeCount: 0,
+                damnedTradeHistory: {
+                    oil: 0,
+                    mirror: 0,
+                    nails: 0,
+                    vigil: 0,
+                    blessing: 0,
+                    cache: 0,
+                },
                 recentCattleLossWeeks: 0,
                 lastHuntResult: null,
             };
@@ -1806,7 +1814,7 @@ var DeadwoodEngine;
             return DeadwoodModel.herdCompositionLine(livingCows(), context);
         }
         function damnedTradeCost(item) {
-            return DeadwoodModel.damnedTradeCost(state.tradeTime, item, state.damnedTradeCount);
+            return DeadwoodModel.damnedTradeCost(state.tradeTime, item, state.damnedTradeHistory[item]);
         }
         function damnedTradesRemaining() {
             return Math.max(0, 3 - state.damnedTradeCount);
@@ -3296,7 +3304,7 @@ var DeadwoodEngine;
                 if (detourPenalty > 0) {
                     miles = Math.max(12, miles - detourPenalty);
                 }
-                const wear = randInt(1, 4);
+                const wear = randInt(2, 5);
                 const fearGain = 2;
                 state.miles += miles;
                 state.wagonCondition -= wear;
@@ -3714,6 +3722,7 @@ var DeadwoodEngine;
                 return;
             }
             state.damnedTradeCount += 1;
+            state.damnedTradeHistory[input] += 1;
             recordAction("trade", input, `${state.tradeLocation}:${state.tradeTime}`);
             await printStatus();
             await printTradePrompt();
@@ -3926,7 +3935,7 @@ var DeadwoodEngine;
                 state.nightHuntPenalty = true;
                 const miles = travelMiles(18, 36);
                 const fearGain = 16;
-                const wear = randInt(4, 8);
+                const wear = randInt(5, 9);
                 state.miles += miles;
                 affectCrew({ fear: fearGain, morale: -3, hunger: 2, health: -1 });
                 state.wagonCondition -= wear;
@@ -4207,13 +4216,17 @@ var DeadwoodEngine;
         }
         function resolveNightDecay() {
             affectCrew({ fear: 4, hunger: 1 });
-            state.wagonSanctity -= 1;
+            state.wagonSanctity -= 2;
             const ambient = westwardAmbientPressure();
             if (ambient.sanctity !== 0) {
                 state.wagonSanctity += ambient.sanctity;
             }
             if (ambient.fear !== 0) {
                 affectCrew({ fear: ambient.fear });
+            }
+            if (state.lastNightAction === "night") {
+                state.wagonSanctity -= 2;
+                state.pendingMessages.push("CAUSE: DRIVING THROUGH THE NIGHT TEARS AT THE WARD FASTER THAN HOLDING CAMP.");
             }
             affectHerd({
                 stress: 3 + ambient.herdStress + (state.fear >= 60 ? 2 : 0),

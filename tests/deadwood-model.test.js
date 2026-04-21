@@ -231,12 +231,15 @@ test('trail learning can make the same crew more capable over time', () => {
   assert.ok(after.handlingCapacity > before.handlingCapacity);
 });
 
-test('damned post trade costs worsen globally with each late trade', () => {
+test('damned post trade costs double per repeated item purchase', () => {
   assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 0), 1);
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 1), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 2), 4);
   assert.equal(DeadwoodModel.damnedTradeCost('day', 'nails', 1), 2);
   assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 0), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 1), 4);
   assert.equal(DeadwoodModel.damnedTradeCost('night', 'cache', 1), 2);
-  assert.equal(DeadwoodModel.damnedTradeCost('night', 'blessing', 2), 4);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'blessing', 2), 8);
 });
 
 test('westward ambient pressure escalates by region', () => {
@@ -249,21 +252,21 @@ test('westward ambient pressure escalates by region', () => {
   });
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(350), {
     fear: 1,
-    sanctity: -2,
+    sanctity: -4,
     herdBlight: 0,
     herdStress: 0,
     label: 'western',
   });
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(600), {
     fear: 2,
-    sanctity: -3,
+    sanctity: -6,
     herdBlight: 1,
     herdStress: 1,
     label: 'staked-plains',
   });
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(800), {
     fear: 3,
-    sanctity: -4,
+    sanctity: -8,
     herdBlight: 2,
     herdStress: 2,
     label: 'salt-flats',
@@ -332,6 +335,32 @@ test('assessCrewConsequence exiles the best-fed hand before a general collapse w
   assert.deepEqual(result, { type: 'food-exile', targetId: 2 });
 });
 
+test('assessCrewConsequence does not turn pure morale favoritism into a food exile without a real food gap', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, hunger: 62, morale: 24 }),
+    makeCrewMember(2, { name: 'MARA QUILL', hunger: 68, morale: 60, foodReceivedTotal: 3 }),
+    makeCrewMember(3, { name: 'JONAH REED', hunger: 70, morale: 18, foodReceivedTotal: 2 }),
+    makeCrewMember(4, { name: 'ELIAS VOSS', hunger: 69, morale: 20, foodReceivedTotal: 2 }),
+    makeCrewMember(5, { name: 'RUTH CALDWELL', hunger: 71, morale: 19, foodReceivedTotal: 1 }),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 34, 42);
+  assert.notDeepEqual(result, { type: 'food-exile', targetId: 2 });
+});
+
+test('assessCrewConsequence can trigger whiskey desertion from repeated bottle favoritism', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, loyalty: 58 }),
+    makeCrewMember(2, { name: 'MARA QUILL', whiskeyReceivedTotal: 3, morale: 44, fear: 30 }),
+    makeCrewMember(3, { name: 'JONAH REED', whiskeyReceivedTotal: 0, morale: 20, fear: 48, loyalty: 56 }),
+    makeCrewMember(4, { name: 'ELIAS VOSS', whiskeyReceivedTotal: 0, morale: 18, fear: 50, loyalty: 55 }),
+    makeCrewMember(5, { name: 'RUTH CALDWELL', whiskeyReceivedTotal: 0, morale: 22, fear: 46, loyalty: 57 }),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 28, 46);
+  assert.deepEqual(result, { type: 'whiskey-desertion', targetId: 2 });
+});
+
 test('assessCrewConsequence can purge a favored non-leader under paranoid high fear', () => {
   const crew = [
     makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, foodReceivedTotal: 20 }),
@@ -380,7 +409,7 @@ test('assessCrewConsequence can trigger a soft collapse from compounded pressure
     makeCrewMember(5),
   ];
 
-  const result = DeadwoodModel.assessCrewConsequence(crew, 40, 52);
+  const result = DeadwoodModel.assessCrewConsequence(crew, 28, 72);
   assert.deepEqual(result, { type: 'collapse', targetId: 2, fatal: false });
 });
 
