@@ -258,14 +258,14 @@ test('westward ambient pressure escalates by region', () => {
     label: 'western',
   });
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(600), {
-    fear: 2,
+    fear: 1,
     sanctity: -6,
     herdBlight: 1,
     herdStress: 1,
     label: 'staked-plains',
   });
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(800), {
-    fear: 3,
+    fear: 2,
     sanctity: -8,
     herdBlight: 2,
     herdStress: 2,

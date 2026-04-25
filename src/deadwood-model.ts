@@ -861,7 +861,7 @@ namespace DeadwoodModel {
     export function westwardAmbientPressure(miles: number): AmbientPressure {
         if (miles >= 760) {
             return {
-                fear: 3,
+                fear: 2,
                 sanctity: -8,
                 herdBlight: 2,
                 herdStress: 2,
@@ -871,7 +871,7 @@ namespace DeadwoodModel {
 
         if (miles >= 520) {
             return {
-                fear: 2,
+                fear: 1,
                 sanctity: -6,
                 herdBlight: 1,
                 herdStress: 1,

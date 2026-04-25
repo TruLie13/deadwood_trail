@@ -159,6 +159,17 @@ const POLICY_PROFILES = {
         night: { tradeSanctityAt: 58, tradeHealthAt: 56, tradeFearAt: 60, riteSanctityAt: 44, riteFearAt: 72, guardStressAt: 52, guardFatigueAt: 56, guardFearAt: 48, whiskeyMoraleAt: 52, whiskeyFearMax: 88, nightWeekAt: 18, nightMilesPerWeek: 36, nightFearMax: 22, nightConditionAt: 78, nightFatigueMax: 30, campfireMoraleAt: 60, campfireFearMax: 54 },
         trade: { elPasoFoodAt: 84, elPasoAmmoAt: 6, elPasoSuppliesAt: 10, elPasoOilSanctityAt: 64, elPasoVigilSanctityAt: 62, elPasoTonicHealthAt: 58, elPasoTonicFatigueAt: 52, elPasoCharmFearAt: 56, elPasoCharmStressAt: 54, damnedMaxTrades: 1, damnedNightSanctityAt: 46, damnedNightFoodAt: 20, damnedNightBlightAt: 26, damnedNightStressAt: 56, damnedDaySanctityAt: 46, damnedDaySuppliesAt: 8, damnedDayFearAt: 58 },
     },
+    "derived-zayan": {
+        name: "derived-zayan",
+        outfit: { food: 80, ammo: 24, supplies: 23, whiskey: 5, grain: 1, oil: 4 },
+        ration: { poorAt: 16, wellAt: 150, fearForWell: 70, moraleForWell: 34, fatigueForWell: 72 },
+        repair: { dayConditionAt: 62, daySanctityAt: 54, ironAt: 50, reinforceAt: 76, patchSuppliesAt: 4 },
+        scout: { detourConditionAt: 34, detourSanctityAt: 36, detourStressAt: 74, detourBlightAt: 28, detourFearAt: 74 },
+        blight: { takeAtFood: 14, takeAtFoodNoAmmo: 20 },
+        day: { tradeFoodAt: 36, tradeAmmoAt: 4, tradeSuppliesAt: 6, tradeSanctityAt: 42, damnedTradeFoodAt: 48, damnedTradeSanctityAt: 28, huntFoodAt: 46, restFatigueAt: 84, restHealthAt: 38, restFearAt: 88, restMoraleAt: 30, slaughterFoodAt: 10 },
+        night: { tradeSanctityAt: 34, tradeHealthAt: 48, tradeFearAt: 84, riteSanctityAt: 34, riteFearAt: 82, guardStressAt: 82, guardFatigueAt: 84, guardFearAt: 52, whiskeyMoraleAt: 48, whiskeyFearMax: 78, nightWeekAt: 7, nightMilesPerWeek: 55, nightFearMax: 42, nightConditionAt: 70, nightFatigueMax: 46, campfireMoraleAt: 80, campfireFearMax: 56 },
+        trade: { elPasoFoodAt: 36, elPasoAmmoAt: 4, elPasoSuppliesAt: 6, elPasoOilSanctityAt: 40, elPasoVigilSanctityAt: 30, elPasoTonicHealthAt: 62, elPasoTonicFatigueAt: 46, elPasoCharmFearAt: 78, elPasoCharmStressAt: 74, damnedMaxTrades: 2, damnedNightSanctityAt: 26, damnedNightFoodAt: 48, damnedNightBlightAt: 34, damnedNightStressAt: 74, damnedDaySanctityAt: 28, damnedDaySuppliesAt: 6, damnedDayFearAt: 84 },
+    },
     mutiny: {
         name: "mutiny",
         outfit: { food: 125, ammo: 18, supplies: 14, whiskey: 3, grain: 0, oil: 1 },
@@ -286,6 +297,15 @@ function chooseBlightCommand(state, policy) {
 
 function chooseEncounterCommand(state, policy) {
     if (state.pendingEncounter === "ash-drowner") {
+        if (policy.name === "derived-zayan") {
+            if (state.food <= 30) {
+                return "provender";
+            }
+            if (state.wagonSanctity <= 24 || state.herdBlight >= 28) {
+                return "ward";
+            }
+            return "refuse";
+        }
         if (state.food <= policy.day.huntFoodAt) {
             return "provender";
         }
@@ -305,6 +325,15 @@ function chooseEncounterCommand(state, policy) {
     }
 
     if (state.pendingEncounter === "salt-chapel") {
+        if (policy.name === "derived-zayan") {
+            if (state.wagonSanctity <= 22 || state.herdBlight >= 24) {
+                return "tithe";
+            }
+            if (state.fear >= 66 || state.morale <= 42) {
+                return "confess";
+            }
+            return "pass";
+        }
         if (state.wagonSanctity <= policy.trade.damnedNightSanctityAt || state.herdBlight >= policy.trade.damnedNightBlightAt) {
             return "tithe";
         }
@@ -315,6 +344,15 @@ function chooseEncounterCommand(state, policy) {
     }
 
     if (state.pendingEncounter === "hollow-drover") {
+        if (policy.name === "derived-zayan") {
+            if (state.herdBlight <= 18 && state.cattle >= 420) {
+                return "follow";
+            }
+            if (state.fear >= 72 || state.herdStress >= 68) {
+                return "bargain";
+            }
+            return "drive";
+        }
         if (state.cattle <= (policy.name === "greedy" ? 470 : 430) && state.herdBlight <= 25) {
             return "follow";
         }
@@ -348,6 +386,22 @@ function chooseTradeCommand(state, policy) {
             return "back";
         }
 
+        if (policy.name === "derived-zayan") {
+            if ((state.herdHealth <= policy.trade.elPasoTonicHealthAt || state.herdFatigue >= policy.trade.elPasoTonicFatigueAt) && state.cash >= 20) {
+                return "tonic";
+            }
+            if (state.wagonSanctity <= policy.trade.elPasoVigilSanctityAt && state.cash >= 24) {
+                return "vigil";
+            }
+            if ((state.fear >= policy.trade.elPasoCharmFearAt || state.herdStress >= policy.trade.elPasoCharmStressAt) && state.cash >= 18) {
+                return "charm";
+            }
+            if (state.blessedGrain === 0 && state.cash >= 18) {
+                return "grain";
+            }
+            return "back";
+        }
+
         if (state.wagonSanctity <= policy.trade.elPasoVigilSanctityAt && state.cash >= 24) {
             return "vigil";
         }
@@ -368,6 +422,19 @@ function chooseTradeCommand(state, policy) {
     }
 
     if (state.tradeTime === "night") {
+        if (policy.name === "derived-zayan") {
+            if (state.food <= policy.trade.damnedNightFoodAt && state.cattle >= 1) {
+                return "cache";
+            }
+            if (state.wagonSanctity <= policy.trade.damnedNightSanctityAt && state.cattle >= 1) {
+                return "vigil";
+            }
+            if ((state.herdBlight >= policy.trade.damnedNightBlightAt || state.herdStress >= policy.trade.damnedNightStressAt) && state.cattle >= 1) {
+                return "blessing";
+            }
+            return "back";
+        }
+
         if (state.wagonSanctity <= policy.trade.damnedNightSanctityAt && state.cattle >= 1) {
             return "vigil";
         }
@@ -443,6 +510,18 @@ function chooseNightCommand(state, policy) {
         state.fear >= policy.night.tradeFearAt
     )) {
         return "trade";
+    }
+
+    if (policy.name === "derived-zayan") {
+        const whiskeyFearTrigger = 42;
+        if (
+            state.whiskey > 0 &&
+            state.wagonSanctity > policy.night.riteSanctityAt &&
+            state.fear >= whiskeyFearTrigger &&
+            state.fear <= policy.night.whiskeyFearMax
+        ) {
+            return "whiskey";
+        }
     }
 
     if (state.wagonSanctity <= policy.night.riteSanctityAt || state.fear >= policy.night.riteFearAt) {

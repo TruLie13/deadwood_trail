@@ -84,6 +84,7 @@ type GameState = {
     rationLevel: RationLevel;
     lastDayAction: DayAction;
     lastNightAction: NightAction;
+    recentStabilizingNights: number;
     pendingBlightedFood: number;
     pendingMessages: string[];
     reachedLandmarks: string[];
@@ -500,7 +501,7 @@ namespace DeadwoodEngine {
             mile: 520,
             name: "Staked Plains",
             onReach: state => {
-                affectCrew({ fear: 12 });
+                affectCrew({ fear: 8 });
                 return [
                     "LANDMARK: THE STAKED PLAINS.",
                     "THE HORIZON REPEATS ITSELF UNTIL EVEN THE CATTLE WALK NERVOUS CIRCLES.",
@@ -513,7 +514,7 @@ namespace DeadwoodEngine {
             onReach: state => {
                 state.canTrade = true;
                 state.tradeLocation = "damned-post";
-                affectCrew({ fear: 10 });
+                affectCrew({ fear: 7 });
                 const lines = [
                     "LANDMARK: THE TRADING POST OF THE DAMNED.",
                     "THE MERCHANTS SMILE TOO CALMLY. THEIR GOODS ARE GOOD. THEIR PRICES FEEL SPIRITUAL.",
@@ -530,7 +531,7 @@ namespace DeadwoodEngine {
             mile: 760,
             name: "Nevada Salt Flats",
             onReach: state => {
-                affectCrew({ fear: 18 });
+                affectCrew({ fear: 12 });
                 const lines = [
                     "LANDMARK: THE NEVADA SALT FLATS.",
                     "OUT HERE THE UNSEEN BECOMES MANIFEST. THE HERD KNOWS IT BEFORE YOUR CREW DOES.",
@@ -1068,6 +1069,7 @@ namespace DeadwoodEngine {
             rationLevel: "moderate",
             lastDayAction: null,
             lastNightAction: null,
+            recentStabilizingNights: 0,
             pendingBlightedFood: 0,
             pendingMessages: [],
             reachedLandmarks: [],
@@ -1664,6 +1666,55 @@ namespace DeadwoodEngine {
         return summarizeCrew().handlingCapacity;
     }
 
+    function stabilizingNightPenalty(): number {
+        return Math.min(2, state.recentStabilizingNights);
+    }
+
+    function updateStabilizingNightPattern() {
+        if (
+            state.lastNightAction === "campfire" ||
+            state.lastNightAction === "guard" ||
+            state.lastNightAction === "whiskey" ||
+            state.lastNightAction === "rite"
+        ) {
+            state.recentStabilizingNights = Math.min(3, state.recentStabilizingNights + 1);
+            return;
+        }
+
+        if (state.lastNightAction === "night") {
+            state.recentStabilizingNights = Math.max(0, state.recentStabilizingNights - 2);
+            return;
+        }
+
+        state.recentStabilizingNights = Math.max(0, state.recentStabilizingNights - 1);
+    }
+
+    function crewControlBurden(): number {
+        let burden = 0;
+
+        if (state.fear >= 70) {
+            burden += 4;
+        } else if (state.fear >= 50) {
+            burden += 2;
+        }
+
+        if (state.morale <= 25) {
+            burden += 4;
+        } else if (state.morale <= 40) {
+            burden += 2;
+        }
+
+        if (livingCrew().length <= 3) {
+            burden += 3;
+        }
+
+        if (state.cattle > crewHandlingCapacity() + 20) {
+            burden += 2;
+        }
+
+        return burden;
+    }
+
     function applyCrewTrailExperience() {
         const milestoneSize = 150;
         const milestonesEarned = Math.floor(state.miles / milestoneSize);
@@ -1843,9 +1894,23 @@ namespace DeadwoodEngine {
     }
 
     function affectCrew(stats: { morale?: number; fear?: number; hunger?: number; health?: number; loyalty?: number }) {
+        const fearDelta = stats.fear ?? 0;
+        const fearRecoveryFactor =
+            fearDelta < 0
+                ? (
+                    state.fear >= 75 ? 0.62 :
+                    state.fear >= 50 ? 0.74 :
+                    0.84
+                ) - (stabilizingNightPenalty() * 0.03)
+                : 1;
+        const adjustedFearDelta =
+            fearDelta < 0
+                ? Math.ceil(fearDelta * Math.max(0.35, fearRecoveryFactor))
+                : fearDelta;
+
         for (const member of livingCrew()) {
             member.morale += (stats.morale ?? 0) + randInt(-1, 1);
-            member.fear += (stats.fear ?? 0) + randInt(-1, 1);
+            member.fear += adjustedFearDelta + randInt(-1, 1);
             member.hunger += (stats.hunger ?? 0) + randInt(-1, 1);
             member.health += (stats.health ?? 0) + randInt(-1, 1);
             member.loyalty += (stats.loyalty ?? 0) + randInt(-1, 1);
@@ -1974,7 +2039,7 @@ namespace DeadwoodEngine {
         state.pendingMessages.push(`DESPERATION: ${names} ${verb} THE TAINTED PORTION. BY MORNING THE MEAT SITS WRONG IN THEIR BONES.`);
     }
 
-    function distributeWhiskey() {
+    function distributeWhiskey(reliefPenalty = 0) {
         const living = livingCrew();
         if (living.length === 0) {
             return;
@@ -1991,12 +2056,12 @@ namespace DeadwoodEngine {
         const chosen = shuffled.slice(0, servings);
         for (const member of chosen) {
             member.whiskeyReceivedTotal += 1;
-            member.morale += randInt(7, 12);
-            member.fear -= randInt(4, 8);
+            member.morale += Math.max(2, randInt(7, 12) - (reliefPenalty * 2));
+            member.fear -= Math.max(1, randInt(4, 8) - (reliefPenalty * 2));
         }
         for (const member of living.filter(candidate => !chosen.includes(candidate))) {
-            member.morale += randInt(1, 3);
-            member.fear -= randInt(0, 2);
+            member.morale += Math.max(0, randInt(1, 3) - reliefPenalty);
+            member.fear -= Math.max(0, randInt(0, 2) - reliefPenalty);
         }
         syncCrewSummary();
     }
@@ -2896,6 +2961,9 @@ namespace DeadwoodEngine {
         const orders = availableDayCommands().map(command => command.toUpperCase());
         await printSection("ORDERS", [`TRAIL: ${orders.join(", ")}`]);
         await Term.writelns(`CURRENT RATIONS: ${rationLabel()}. ${state.rationChangedThisWeek ? "YOU HAVE ALREADY CHANGED THEM THIS WEEK." : 'TYPE "RATIONS" TO CHANGE THEM ONCE THIS WEEK.'}`);
+        if (state.pendingScoutEncounter && !state.activeScoutRoutePlan) {
+            await Term.writelns(`SCOUT WARNING: ${scoutEncounterName(state.pendingScoutEncounter)} AHEAD. WHEN YOU CHOOSE TRAVEL, YOU WILL NEED TO FACE IT OR DETOUR.`);
+        }
         if (state.activeScoutEncounter && state.activeScoutRoutePlan === "face") {
             await Term.writelns(`SCOUT ROUTE: FACE ${scoutEncounterName(state.activeScoutEncounter)} ON YOUR NEXT TRAVEL.`);
         } else if (state.activeScoutEncounter && state.activeScoutRoutePlan === "detour") {
@@ -3086,9 +3154,10 @@ namespace DeadwoodEngine {
         const fearPenalty = state.fear >= 75 ? 6 : 0;
         const moralePenalty = state.morale <= 20 ? 4 : 0;
         const healthPenalty = state.herdHealth <= 40 ? 12 : state.herdHealth <= 55 ? 6 : 0;
-        const overload = Math.max(0, state.cattle - (crewHandlingCapacity() + 40));
-        const capacityPenalty = Math.min(22, Math.floor(overload / 18));
-        return Math.max(12, base - fatiguePenalty - stressPenalty - fearPenalty - moralePenalty - healthPenalty - capacityPenalty);
+        const overload = Math.max(0, state.cattle - (crewHandlingCapacity() + 20));
+        const capacityPenalty = Math.min(24, Math.floor(overload / 16));
+        const controlPenalty = crewControlBurden();
+        return Math.max(12, base - fatiguePenalty - stressPenalty - fearPenalty - moralePenalty - healthPenalty - capacityPenalty - controlPenalty);
     }
 
     function designatedHunter(): CrewMember | undefined {
@@ -4078,6 +4147,11 @@ namespace DeadwoodEngine {
 
     async function handleDayCommand(input: string) {
         if (input === "travel") {
+            if (state.pendingScoutEncounter && !state.activeScoutRoutePlan) {
+                state.phase = "scout";
+                await printScoutPrompt();
+                return;
+            }
             if (currentRunReport) {
                 currentRunReport.counters.dayActions.travel += 1;
             }
@@ -4095,10 +4169,11 @@ namespace DeadwoodEngine {
             state.miles += miles;
             state.wagonCondition -= wear;
             affectCrew({ fear: fearGain });
+            const controlBurden = crewControlBurden();
             affectHerd({
-                fatigue: 10 + (state.rationLevel === "poor" ? 3 : 0),
-                stress: 6,
-                health: state.rationLevel === "poor" ? -4 : -1,
+                fatigue: 10 + (state.rationLevel === "poor" ? 3 : 0) + controlBurden,
+                stress: 6 + controlBurden,
+                health: state.rationLevel === "poor" ? -4 - (controlBurden >= 5 ? 1 : 0) : -1 - (controlBurden >= 6 ? 1 : 0),
             });
             await Term.writelns(`YOU PUSH THE DRIVE FORWARD AND COVER ${miles} MILES THIS WEEK.`);
             await Term.writelns(travelWearLine(wear, fearGain));
@@ -4264,7 +4339,7 @@ namespace DeadwoodEngine {
             clearScoutWarning();
             await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS THE DIRECT LINE. IF YOU TRAVEL THIS WEEK, YOU WILL MEET ${scoutEncounterName(encounter)} HEAD-ON.`);
             state.phase = "day";
-            await printDayPrompt();
+            await handleDayCommand("travel");
             return;
         }
 
@@ -4281,7 +4356,7 @@ namespace DeadwoodEngine {
             clearScoutWarning();
             await Term.writelns(`${designatedScout()?.name ?? "THE SCOUT"} MARKS A WIDER LINE. YOUR NEXT TRAVEL THIS WEEK WILL LOSE ${detourMiles} MILES BUT AVOIDS ${scoutEncounterName(encounter)}.`);
             state.phase = "day";
-            await printDayPrompt();
+            await handleDayCommand("travel");
             return;
         }
 
@@ -4548,6 +4623,7 @@ namespace DeadwoodEngine {
             }
             state.supplies -= 8;
             state.wagonCondition += 22;
+            state.wagonSanctity -= 4;
             affectCrew({ morale: -2, hunger: 1 });
             affectHerd({ fatigue: -5, health: 3 });
             recordAction("repair", "reinforce");
@@ -4570,6 +4646,7 @@ namespace DeadwoodEngine {
                 return;
             }
             state.supplies -= 6;
+            state.wagonCondition -= 2;
             state.wagonSanctity += 12;
             affectCrew({ fear: -4 });
             affectHerd({ stress: -6, blight: -2 });
@@ -4648,15 +4725,16 @@ namespace DeadwoodEngine {
         state.nightHuntPenalty = false;
 
         if (input === "campfire") {
+            const reliefPenalty = stabilizingNightPenalty();
             if (currentRunReport) {
                 currentRunReport.counters.nightActions.campfire += 1;
             }
             recordAction("night", "campfire");
             state.lastNightAction = "campfire";
-            affectCrew({ morale: 10, fear: -5, hunger: -1 });
-            affectHerd({ stress: -3, fatigue: -2 });
+            affectCrew({ morale: Math.max(4, 10 - (reliefPenalty * 2)), fear: -(Math.max(2, 5 - reliefPenalty)), hunger: -1 });
+            affectHerd({ stress: -(Math.max(1, 3 - reliefPenalty)), fatigue: -(Math.max(0, 2 - reliefPenalty)) });
             await Term.writelns("THE CAMPFIRE DRAWS THE CREW TOGETHER.");
-            if (chance(28)) {
+            if (chance(28 + (reliefPenalty * 4))) {
                 affectCrew({ fear: 10, morale: -2 });
                 affectHerd({ stress: 16 });
                 removeCattle(randInt(2, 7) + herdLossRiskBonus(), "lost", "weakest", "campfire-stampede");
@@ -4667,14 +4745,15 @@ namespace DeadwoodEngine {
         }
 
         if (input === "guard") {
+            const reliefPenalty = stabilizingNightPenalty();
             if (currentRunReport) {
                 currentRunReport.counters.nightActions.guard += 1;
             }
             recordAction("night", "guard");
             state.lastNightAction = "guard";
             const guards = assignGuardDuty();
-            affectCrew({ morale: -1, fear: -14, loyalty: 1 });
-            affectHerd({ stress: -12, fatigue: -10, health: 2 });
+            affectCrew({ morale: -1 - reliefPenalty, fear: -(Math.max(5, 14 - (reliefPenalty * 3))), loyalty: 1 });
+            affectHerd({ stress: -(Math.max(3, 12 - (reliefPenalty * 3))), fatigue: -(Math.max(2, 10 - (reliefPenalty * 2))), health: Math.max(0, 2 - reliefPenalty) });
             const calmed = calmTraumatizedCattle(percentOfHerd(10), 11);
             await Term.writelns("DOUBLE GUARD DUTY COSTS REST, BUT IT KEEPS THE CAMP ORDERLY AND THE HERD DOWN OFF ITS NERVES.");
             if (guards.length > 0) {
@@ -4688,6 +4767,7 @@ namespace DeadwoodEngine {
         }
 
         if (input === "whiskey") {
+            const reliefPenalty = stabilizingNightPenalty();
             if (currentRunReport) {
                 currentRunReport.counters.nightActions.whiskey += 1;
             }
@@ -4700,14 +4780,15 @@ namespace DeadwoodEngine {
             }
 
             state.whiskey -= 1;
-            distributeWhiskey();
-            affectHerd({ stress: -8, fatigue: -2 });
+            distributeWhiskey(reliefPenalty);
+            affectHerd({ stress: -(Math.max(2, 8 - (reliefPenalty * 2))), fatigue: -(Math.max(0, 2 - reliefPenalty)) });
             await Term.writelns("THE WHISKEY PUTS A LITTLE FIRE BACK IN THE CREW.");
             await endNight();
             return;
         }
 
         if (input === "rite" || input === "occultist") {
+            const reliefPenalty = stabilizingNightPenalty();
             if (currentRunReport) {
                 currentRunReport.counters.nightActions.rite += 1;
             }
@@ -4719,9 +4800,9 @@ namespace DeadwoodEngine {
                 return;
             }
 
-            affectCrew({ morale: -8, fear: -20 });
+            affectCrew({ morale: -8 - reliefPenalty, fear: -(Math.max(7, 20 - (reliefPenalty * 4))) });
             state.occultHuntBonus = true;
-            affectHerd({ stress: -12, health: -2, fatigue: -1 });
+            affectHerd({ stress: -(Math.max(3, 12 - (reliefPenalty * 3))), health: -2, fatigue: -1 });
             const relieved = relieveInfectedCattle(percentOfHerd(6), 6);
             const calmed = calmTraumatizedCattle(percentOfHerd(8), 8);
             await Term.writelns("THE RITE NAMES THE THING FOLLOWING THE WAGON. NOBODY SLEEPS BETTER, BUT EVERYONE SLEEPS WARNED.");
@@ -4745,10 +4826,11 @@ namespace DeadwoodEngine {
             state.miles += miles;
             affectCrew({ fear: fearGain, morale: -3, hunger: 2, health: -1 });
             state.wagonCondition -= wear;
+            const controlBurden = crewControlBurden();
             affectHerd({
-                fatigue: 18,
-                stress: 16,
-                health: -4,
+                fatigue: 18 + controlBurden,
+                stress: 16 + controlBurden,
+                health: -4 - (controlBurden >= 5 ? 1 : 0),
                 blight: state.miles >= 520 ? 2 : 0,
             });
             await Term.writelns(`YOU NIGHT DRIVE THROUGH THE VEIL AND STEAL ${miles} MILES FROM THE DARK.`);
@@ -4862,8 +4944,9 @@ namespace DeadwoodEngine {
             } else if (input === "refuse") {
                 recordEncounterChoice("ash-drowner", "refuse");
                 recordAction("encounter", "refuse", "ash-drowner");
-                affectCrew({ fear: 8, morale: -4, loyalty: -2 });
-                affectHerd({ stress: 14, fatigue: 5 });
+                affectCrew({ fear: 8, morale: -5, loyalty: -3 });
+                state.wagonSanctity -= 4;
+                affectHerd({ stress: 16, fatigue: 6 });
                 await Term.writelns("YOU KEEP EVERY HEAD, BUT THE THING WALKS THE HERDLINE UNTIL MORNING. NONE OF THE CATTLE FORGET IT.");
             } else {
                 await Term.writelns("TYPE PASSAGE, WARD, PROVENDER, OR REFUSE.");
@@ -4894,9 +4977,9 @@ namespace DeadwoodEngine {
             } else if (input === "pass" || input === "pass by") {
                 recordEncounterChoice("salt-chapel", "pass");
                 recordAction("encounter", "pass", "salt-chapel");
-                affectCrew({ fear: 6 });
-                state.wagonSanctity -= 8;
-                affectHerd({ blight: 3 });
+                affectCrew({ fear: 6, morale: -2 });
+                state.wagonSanctity -= 10;
+                affectHerd({ blight: 4, stress: 2 });
                 await Term.writelns("YOU LEAVE THE CHAPEL TO ITS BELL AND KEEP THE HERD MOVING. THE SOUND FOLLOWS LONGER THAN IT SHOULD.");
             } else {
                 await Term.writelns("TYPE TITHE, CONFESS, OR PASS BY.");
@@ -4942,8 +5025,8 @@ namespace DeadwoodEngine {
             } else if (input === "drive off" || input === "drive") {
                 recordEncounterChoice("hollow-drover", "drive-off");
                 recordAction("encounter", "drive-off", "hollow-drover");
-                affectCrew({ fear: 5 });
-                affectHerd({ stress: 5 });
+                affectCrew({ fear: 5, morale: -2 });
+                affectHerd({ stress: 7, fatigue: 2 });
                 await Term.writelns("YOU TURN THE HERD AWAY FROM HIM AND DO NOT LOOK BACK. NOBODY SAYS WHAT THEY HEARD IN HIS VOICE.");
             } else {
                 await Term.writelns("TYPE FOLLOW, BARGAIN, OR DRIVE OFF.");
@@ -4986,19 +5069,16 @@ namespace DeadwoodEngine {
             return;
         }
 
+        updateStabilizingNightPattern();
         state.week += 1;
         state.recentCattleLossWeeks = Math.max(0, state.recentCattleLossWeeks - 1);
         state.rationChangedThisWeek = false;
         clearScoutRoutePlan();
-        state.phase = state.pendingScoutEncounter ? "scout" : "day";
+        state.phase = "day";
         captureRunSnapshot("week-start");
         await printStatus();
         await printEnvironment(environmentLines());
-        if (state.phase === "scout") {
-            await printScoutPrompt();
-        } else {
-            await printDayPrompt();
-        }
+        await printDayPrompt();
     }
 
     function normalizeState() {
@@ -5022,7 +5102,7 @@ namespace DeadwoodEngine {
     }
 
     function resolveNightDecay() {
-        affectCrew({ fear: 4, hunger: 1 });
+        affectCrew({ fear: 3, hunger: 1 });
         state.wagonSanctity -= 2;
         const ambient = westwardAmbientPressure();
         if (ambient.sanctity !== 0) {
@@ -5040,6 +5120,16 @@ namespace DeadwoodEngine {
             fatigue: nightlyFatigueShift(),
             blight: (state.miles >= 520 ? 1 : 0) + ambient.herdBlight,
         });
+        const controlBurden = crewControlBurden();
+        if (controlBurden > 0) {
+            affectHerd({
+                stress: Math.max(1, Math.floor(controlBurden / 2)),
+                fatigue: Math.max(0, Math.floor((controlBurden - 1) / 2)),
+            });
+            if (controlBurden >= 5) {
+                state.pendingMessages.push("CAUSE: THE CREW IS TOO SHAKEN TO KEEP THE HERD TRULY SETTLED. EVEN QUIETER NIGHTS COST MORE THAN THEY SHOULD.");
+            }
+        }
         if (state.miles < 310) {
             state.pendingMessages.push("CAUSE: ANOTHER EXPOSED NIGHT ON THE TRAIL LEAVES THE CREW RESTLESS AND DIMS THE WAGON'S SANCTITY.");
         } else if (ambient.label === "western") {
@@ -5073,14 +5163,14 @@ namespace DeadwoodEngine {
 
         const sanctityExposure = sanctityExposureLevel();
         if (sanctityExposure === "thin") {
-            affectCrew({ fear: 4, morale: -1 });
+            affectCrew({ fear: 2, morale: -1 });
             state.pendingMessages.push("CAUSE: THE WAGON FEELS THIN AND EXPOSED. THE CREW CAN SENSE THE SANCTITY FAILING.");
         } else if (sanctityExposure === "exposed") {
-            affectCrew({ fear: 7, morale: -2 });
+            affectCrew({ fear: 5, morale: -2 });
             affectHerd({ stress: 2 });
             state.pendingMessages.push("CAUSE: THE WARD HAS THINNED TO A THREAD. EVERY SOUND IN THE DARK FEELS CLOSER, AND THE HERD PICKS UP THE SAME PANIC.");
         } else if (sanctityExposure === "open") {
-            affectCrew({ fear: 12, morale: -4, health: -1 });
+            affectCrew({ fear: 8, morale: -4, health: -1 });
             affectHerd({ stress: 5, blight: 1 });
             state.pendingMessages.push("CAUSE: THE WARD IS GONE. WITHOUT SANCTITY TO TURN THE DARK, EVERY NIGHT THING PRESSES RIGHT UP AGAINST THE CAMP.");
         }
@@ -5226,15 +5316,33 @@ namespace DeadwoodEngine {
             return;
         }
 
+        const encounterBonus = sanctityEncounterBonus();
+        const eventBonus = sanctityEventBonus();
+
+        if (state.miles < 310) {
+            const earlyEncounterBonus = Math.max(0, Math.floor(encounterBonus / 2));
+            const earlyEventBonus = Math.max(0, Math.floor(eventBonus / 2));
+
+            if (
+                blockedEncounter !== "hollow-drover" &&
+                (state.recentCattleLossWeeks > 0 || state.herdStress >= 40 || state.fear >= 35) &&
+                chance(8 + earlyEncounterBonus)
+            ) {
+                await hollowDroverEncounter();
+            } else if (chance(12 + earlyEventBonus)) {
+                await whisperingCacheEvent();
+            } else if (chance(10 + earlyEventBonus)) {
+                await hoofRotEvent();
+            }
+            return;
+        }
+
         if (location === "STAKED PLAINS") {
             if (chance(30)) {
                 await circlesEvent();
                 return;
             }
         }
-
-        const encounterBonus = sanctityEncounterBonus();
-        const eventBonus = sanctityEventBonus();
 
         if (blockedEncounter !== "salt-chapel" && state.miles >= 520 && (state.wagonSanctity <= 55 || state.herdBlight >= 20 || state.fear >= 45) && chance(16 + encounterBonus)) {
             await saltChapelEncounter();
@@ -5557,19 +5665,36 @@ namespace DeadwoodEngine {
         const options = getAutocompleteOptions();
         const metaCommands = new Set(["status", "help", "quit"]);
 
+        function resolveSingleMatch(matches: string[]): string | null {
+            if (matches.length === 1) {
+                return matches[0];
+            }
+
+            const nonMetaMatches = matches.filter(option => !metaCommands.has(option));
+            if (nonMetaMatches.length === 1) {
+                return nonMetaMatches[0];
+            }
+
+            return null;
+        }
+
         if (trimmedStart.length === 0) {
             return null;
         }
 
-        const normalizedInput = trimmedStart.toLowerCase().replace(/\s+/g, " ").trim();
-        const exactPhraseMatches = options.filter(option => option.startsWith(normalizedInput));
-        if (exactPhraseMatches.length !== 1) {
-            const nonMetaPhraseMatches = exactPhraseMatches.filter(option => !metaCommands.has(option));
-            if (nonMetaPhraseMatches.length === 1) {
-                return raw.replace(/\S.*$/, nonMetaPhraseMatches[0].toUpperCase()) || nonMetaPhraseMatches[0].toUpperCase();
-            }
-        } else {
-            return raw.replace(/\S.*$/, exactPhraseMatches[0].toUpperCase()) || exactPhraseMatches[0].toUpperCase();
+        const endsWithWhitespace = /\s$/.test(trimmedStart);
+        let normalizedInput = trimmedStart.toLowerCase().replace(/\s+/g, " ");
+        if (!endsWithWhitespace) {
+            normalizedInput = normalizedInput.trim();
+        }
+
+        const phraseMatch = resolveSingleMatch(options.filter(option => option.startsWith(normalizedInput)));
+        if (phraseMatch) {
+            return raw.replace(/\S.*$/, phraseMatch.toUpperCase()) || phraseMatch.toUpperCase();
+        }
+
+        if (endsWithWhitespace) {
+            return null;
         }
 
         const parts = normalizedInput.split(/\s+/);
@@ -5579,18 +5704,13 @@ namespace DeadwoodEngine {
             return null;
         }
 
-        const matches = options.filter(option => option.startsWith(last));
-        if (matches.length !== 1) {
-            const nonMetaMatches = matches.filter(option => !metaCommands.has(option));
-            if (nonMetaMatches.length !== 1) {
-                return null;
-            }
-            parts[parts.length - 1] = nonMetaMatches[0];
-            return raw.replace(/\S+$/, nonMetaMatches[0].toUpperCase()) || parts.join(" ").toUpperCase();
+        const wordMatch = resolveSingleMatch(options.filter(option => option.startsWith(last)));
+        if (!wordMatch) {
+            return null;
         }
 
-        parts[parts.length - 1] = matches[0];
-        return raw.replace(/\S+$/, matches[0].toUpperCase()) || parts.join(" ").toUpperCase();
+        parts[parts.length - 1] = wordMatch;
+        return raw.replace(/\S+$/, wordMatch.toUpperCase()) || parts.join(" ").toUpperCase();
     }
 
     function getAutocompleteOptions(): string[] {
