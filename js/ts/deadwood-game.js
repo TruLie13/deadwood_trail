@@ -3368,15 +3368,21 @@ var DeadwoodEngine;
                 state.wagonCondition -= wear;
                 affectCrew({ fear: fearGain });
                 const controlBurden = crewControlBurden();
+                const earlyTrailBurden = state.miles < 310 ? 3 : 0;
                 affectHerd({
-                    fatigue: 10 + (state.rationLevel === "poor" ? 3 : 0) + controlBurden,
-                    stress: 6 + controlBurden,
+                    fatigue: 10 + (state.rationLevel === "poor" ? 3 : 0) + controlBurden + earlyTrailBurden,
+                    stress: 6 + controlBurden + (state.miles < 310 ? 2 : 0),
                     health: state.rationLevel === "poor" ? -4 - (controlBurden >= 5 ? 1 : 0) : -1 - (controlBurden >= 6 ? 1 : 0),
                 });
                 await Term.writelns(`YOU PUSH THE DRIVE FORWARD AND COVER ${miles} MILES THIS WEEK.`);
                 await Term.writelns(travelWearLine(wear, fearGain));
                 if (detourPenalty > 0 && state.activeScoutEncounter) {
                     await Term.writelns(`YOU TAKE THE LONGER LINE AND GIVE ${scoutEncounterName(state.activeScoutEncounter)} A WIDE BERTH.`);
+                }
+                await reachLandmarks();
+                if (await evaluateEndings()) {
+                    clearScoutRoutePlan();
+                    return;
                 }
                 if (plannedEncounter) {
                     clearScoutRoutePlan();
@@ -3390,7 +3396,6 @@ var DeadwoodEngine;
                 if (state.phase === "encounter") {
                     return;
                 }
-                await reachLandmarks();
                 await transitionToRations();
                 return;
             }
@@ -4005,9 +4010,10 @@ var DeadwoodEngine;
                 affectCrew({ fear: fearGain, morale: -3, hunger: 2, health: -1 });
                 state.wagonCondition -= wear;
                 const controlBurden = crewControlBurden();
+                const earlyNightBurden = state.miles < 310 ? 3 : 0;
                 affectHerd({
-                    fatigue: 18 + controlBurden,
-                    stress: 16 + controlBurden,
+                    fatigue: 18 + controlBurden + earlyNightBurden,
+                    stress: 16 + controlBurden + (state.miles < 310 ? 2 : 0),
                     health: -4 - (controlBurden >= 5 ? 1 : 0),
                     blight: state.miles >= 520 ? 2 : 0,
                 });
