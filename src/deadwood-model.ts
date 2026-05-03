@@ -417,12 +417,17 @@ namespace DeadwoodModel {
         const guardGap = mostWorked.guardDutyCount - leastWorked.guardDutyCount;
         const foodGap = mostFed.foodReceivedTotal - leastFed.foodReceivedTotal;
         const whiskeyGap = whiskeyFavored.whiskeyReceivedTotal - whiskeyDry.whiskeyReceivedTotal;
+        const averageWhiskey = grievancePool.length > 0
+            ? grievancePool.reduce((sum, member) => sum + member.whiskeyReceivedTotal, 0) / grievancePool.length
+            : 0;
+        const whiskeyStrain = whiskeyDry.whiskeyReceivedTotal < averageWhiskey &&
+            (whiskeyDry.morale <= 42 || whiskeyDry.fear >= 60);
 
         return {
             breakingMemberName: breaking && (breaking.morale <= 18 || breaking.fear >= 85 || breaking.hunger >= 80) ? breaking.name : null,
             guardImbalanceName: guardGap >= 4 ? leastWorked.name : null,
             portionImbalanceName: foodGap >= 10 && summary.morale <= 42 && summary.fear >= 35 ? mostFed.name : null,
-            whiskeyImbalance: whiskeyGap >= 3 && summary.morale <= 44 && summary.fear >= 34,
+            whiskeyImbalance: (whiskeyGap >= 2 && summary.morale <= 52 && summary.fear >= 28) || whiskeyStrain,
             noLeader: !living.some(member => member.isLeader),
             overCapacity: cattle > summary.handlingCapacity + 50,
             severeOverCapacity: summary.handlingCapacity > 0 ? cattle > Math.round(summary.handlingCapacity * 1.25) : cattle > 0,
@@ -586,6 +591,82 @@ namespace DeadwoodModel {
         const foodGap = bestFed.foodReceivedTotal - leastFed.foodReceivedTotal;
         const moraleGap = highestMorale.morale - lowestMorale.morale;
         const whiskeyGap = whiskeyFavored.whiskeyReceivedTotal - whiskeyDry.whiskeyReceivedTotal;
+        const averageFood = grievancePool.reduce((sum, member) => sum + member.foodReceivedTotal, 0) / grievancePool.length;
+        const averageGuard = grievancePool.reduce((sum, member) => sum + member.guardDutyCount, 0) / grievancePool.length;
+        const averageWhiskey = grievancePool.reduce((sum, member) => sum + member.whiskeyReceivedTotal, 0) / grievancePool.length;
+        const moraleActionScale =
+            visibleMorale >= 90 ? 0 :
+            visibleMorale >= 75 ? 0.35 :
+            visibleMorale >= 60 ? 0.65 :
+            visibleMorale >= 45 ? 1 :
+            1.25;
+
+        function personalBurden(member: CrewMember): number {
+            const guardBurden = Math.max(0, member.guardDutyCount - averageGuard);
+            const foodBurden = Math.max(0, averageFood - member.foodReceivedTotal);
+            const whiskeyBurden = Math.max(0, averageWhiskey - member.whiskeyReceivedTotal);
+
+            return (
+                (guardBurden * 3.2) +
+                (foodBurden * 2.4) +
+                (whiskeyBurden * 5.5) +
+                (Math.max(0, 42 - member.morale) * 0.75) +
+                (Math.max(0, member.fear - 60) * 0.45) +
+                (Math.max(0, member.hunger - 62) * 0.4) +
+                (Math.max(0, 45 - member.health) * 0.35)
+            );
+        }
+
+        function privilegeScore(member: CrewMember): number {
+            const foodPrivilege = Math.max(0, member.foodReceivedTotal - averageFood);
+            const whiskeyPrivilege = Math.max(0, member.whiskeyReceivedTotal - averageWhiskey);
+            const dutyPrivilege = Math.max(0, averageGuard - member.guardDutyCount);
+
+            return (
+                (foodPrivilege * 2.4) +
+                (whiskeyPrivilege * 5.5) +
+                (dutyPrivilege * 3) +
+                (Math.max(0, member.morale - visibleMorale) * 0.35) +
+                (Math.max(0, visibleFear - member.fear) * 0.15)
+            );
+        }
+
+        const burdenEntries = grievancePool.map(member => ({
+            member,
+            burden: personalBurden(member),
+            privilege: privilegeScore(member),
+        }));
+        const burdenedMembers = burdenEntries.filter(entry =>
+            entry.burden >= 6 ||
+            entry.member.morale <= 24 ||
+            entry.member.fear >= 82 ||
+            entry.member.hunger >= 68
+        );
+        const requiredBurdenedCount = grievancePool.length <= 2 ? 1 : 3;
+        const deserterCandidate = [...burdenEntries].sort((left, right) =>
+            right.burden - left.burden ||
+            left.member.morale - right.member.morale ||
+            right.member.fear - left.member.fear
+        )[0];
+        const privilegedCandidate = [...burdenEntries].sort((left, right) =>
+            right.privilege - left.privilege ||
+            right.member.foodReceivedTotal - left.member.foodReceivedTotal ||
+            right.member.whiskeyReceivedTotal - left.member.whiskeyReceivedTotal
+        )[0];
+        const foodPrivilege = privilegedCandidate
+            ? Math.max(0, privilegedCandidate.member.foodReceivedTotal - averageFood) * 2.4
+            : 0;
+        const whiskeyPrivilege = privilegedCandidate
+            ? Math.max(0, privilegedCandidate.member.whiskeyReceivedTotal - averageWhiskey) * 5.5
+            : 0;
+        const comfortPrivilege = privilegedCandidate
+            ? (foodPrivilege + whiskeyPrivilege)
+            : 0;
+        const dutyPrivilege = privilegedCandidate
+            ? Math.max(0, averageGuard - privilegedCandidate.member.guardDutyCount) * 3
+            : 0;
+        const exilePressure = moraleActionScale * (Math.max(0, burdenedMembers.length - 1) * 4);
+        const canSociallyAct = visibleMorale < 90;
 
         function collapseAssessment(member: CrewMember | null): { shouldCollapse: boolean; fatal: boolean } {
             if (!member) {
@@ -636,22 +717,59 @@ namespace DeadwoodModel {
             }
         }
 
-        if (guardGap >= 3 && visibleMorale <= 48 && (visibleFear >= 40 || averageHunger >= 62)) {
-            return { type: "guard-exile", targetId: leastWorked.id };
+        if (
+            canSociallyAct &&
+            privilegedCandidate &&
+            burdenedMembers.length >= requiredBurdenedCount &&
+            moraleActionScale >= 0.65 &&
+            comfortPrivilege + exilePressure >= 12 &&
+            (foodGap >= 4 || whiskeyGap >= 2) &&
+            averageHunger >= 42
+        ) {
+            if (whiskeyPrivilege > foodPrivilege) {
+                return { type: "whiskey-desertion", targetId: privilegedCandidate.member.id };
+            }
+            return { type: "food-exile", targetId: privilegedCandidate.member.id };
         }
 
-        if (whiskeyGap >= 2 && visibleMorale <= 38 && (visibleFear >= 38 || averageLoyalty <= 60)) {
-            return { type: "whiskey-desertion", targetId: whiskeyFavored.id };
+        if (
+            canSociallyAct &&
+            privilegedCandidate &&
+            burdenedMembers.length >= requiredBurdenedCount &&
+            moraleActionScale >= 0.65 &&
+            dutyPrivilege + exilePressure >= 11 &&
+            guardGap >= 2 &&
+            (visibleFear >= 34 || averageHunger >= 56)
+        ) {
+            return { type: "guard-exile", targetId: privilegedCandidate.member.id };
         }
 
-        if (foodGap >= 5 && averageHunger >= 48 && visibleMorale <= 50) {
-            return { type: "food-exile", targetId: bestFed.id };
+        if (
+            canSociallyAct &&
+            whiskeyGap >= 2 &&
+            whiskeyDry.whiskeyReceivedTotal < averageWhiskey &&
+            (
+                whiskeyDry.morale <= 34 ||
+                personalBurden(whiskeyDry) >= 12
+            ) &&
+            (visibleFear >= 30 || averageLoyalty <= 68 || whiskeyDry.fear >= 60)
+        ) {
+            return { type: "whiskey-desertion", targetId: whiskeyDry.id };
         }
 
         if (brittle) {
             const brittleAssessment = collapseAssessment(brittle);
             if (brittleAssessment.fatal) {
                 return { type: "collapse", targetId: brittle.id, fatal: true };
+            }
+
+            if (
+                deserterCandidate &&
+                deserterCandidate.member.id !== brittle.id &&
+                deserterCandidate.member.morale <= 16 &&
+                deserterCandidate.burden >= 14
+            ) {
+                return { type: "collapse", targetId: deserterCandidate.member.id, fatal: false };
             }
 
             if (!brittleNonLeader) {
@@ -847,7 +965,8 @@ namespace DeadwoodModel {
         return "FOR ALL THE LOSSES, THE STOCK THAT SURVIVED STILL LOOK LIKE THEY BELONG TO THE LIVING WORLD.";
     }
 
-    export function damnedTradeCost(tradeTime: TradeTime, item: DamnedTradeItem, itemPurchases: number): number {
+    export function damnedTradeCost(tradeTime: TradeTime, item: DamnedTradeItem, totalDealsUsed: number, itemPurchases: number): number {
+        const marketInflation = clamp(totalDealsUsed, 0, 2);
         const repeats = clamp(itemPurchases, 0, 2);
         const baseCost =
             tradeTime === "day"
@@ -855,7 +974,7 @@ namespace DeadwoodModel {
                 : item === "cache"
                     ? 1
                     : 2;
-        return baseCost * (2 ** repeats);
+        return baseCost * (2 ** marketInflation) * (2 ** repeats);
     }
 
     export function westwardAmbientPressure(miles: number): AmbientPressure {

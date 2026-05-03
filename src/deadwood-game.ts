@@ -1407,7 +1407,7 @@ namespace DeadwoodEngine {
                             ["scout route", state.activeScoutRoutePlan ? `${state.activeScoutRoutePlan}${state.activeScoutRoutePlan === "detour" ? ` / -${state.activeScoutDetourMiles} mi` : ""}` : "none"],
                             ["blighted stores", `${state.blightedFood}`],
                             ["pending blight", `${state.pendingBlightedFood}`],
-                            ["damned trades", `${state.damnedTradeCount}/3 used`],
+                            ["damned trades", `${state.damnedTradeCount}/2 used`],
                             ["recent cattle loss", `${state.recentCattleLossWeeks} week(s)`],
                             ["rite ready", debugBoolean(state.hasOccultist)],
                             ["hunt bonus", debugBoolean(state.occultHuntBonus)],
@@ -2541,11 +2541,16 @@ namespace DeadwoodEngine {
     }
 
     function damnedTradeCost(item: DeadwoodModel.DamnedTradeItem): number {
-        return DeadwoodModel.damnedTradeCost(state.tradeTime, item, state.damnedTradeHistory[item]);
+        return DeadwoodModel.damnedTradeCost(
+            state.tradeTime,
+            item,
+            state.damnedTradeCount,
+            state.damnedTradeHistory[item],
+        );
     }
 
     function damnedTradesRemaining(): number {
-        return Math.max(0, 3 - state.damnedTradeCount);
+        return Math.max(0, 2 - state.damnedTradeCount);
     }
 
     function westwardAmbientPressure() {

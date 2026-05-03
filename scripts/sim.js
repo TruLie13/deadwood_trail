@@ -170,6 +170,13 @@ const POLICY_PROFILES = {
         night: { tradeSanctityAt: 34, tradeHealthAt: 48, tradeFearAt: 84, riteSanctityAt: 34, riteFearAt: 82, guardStressAt: 82, guardFatigueAt: 84, guardFearAt: 52, whiskeyMoraleAt: 48, whiskeyFearMax: 78, nightWeekAt: 7, nightMilesPerWeek: 55, nightFearMax: 42, nightConditionAt: 70, nightFatigueMax: 46, campfireMoraleAt: 80, campfireFearMax: 56 },
         trade: { elPasoFoodAt: 36, elPasoAmmoAt: 4, elPasoSuppliesAt: 6, elPasoOilSanctityAt: 40, elPasoVigilSanctityAt: 30, elPasoTonicHealthAt: 62, elPasoTonicFatigueAt: 46, elPasoCharmFearAt: 78, elPasoCharmStressAt: 74, damnedMaxTrades: 2, damnedNightSanctityAt: 26, damnedNightFoodAt: 48, damnedNightBlightAt: 34, damnedNightStressAt: 74, damnedDaySanctityAt: 28, damnedDaySuppliesAt: 6, damnedDayFearAt: 84 },
     },
+    planner: {
+        name: "planner",
+        planner: true,
+        outfit: { food: 150, ammo: 24, supplies: 22, whiskey: 4, grain: 1, oil: 2 },
+        fallbackPolicies: ["balanced"],
+        lookaheadDecisions: 1,
+    },
     mutiny: {
         name: "mutiny",
         outfit: { food: 125, ammo: 18, supplies: 14, whiskey: 3, grain: 0, oil: 1 },
@@ -587,6 +594,304 @@ function chooseCommand(state, policy) {
     }
 }
 
+const COMMAND_CANONICAL = new Map([
+    ["face", "face it"],
+    ["detour", "detour"],
+    ["long way", "detour"],
+    ["pass", "pass by"],
+    ["pass by", "pass by"],
+    ["drive", "drive off"],
+    ["drive off", "drive off"],
+    ["desperate", "desperate hunt"],
+    ["occultist", "rite"],
+]);
+
+function canonicalCommand(command) {
+    return COMMAND_CANONICAL.get(command) || command;
+}
+
+function candidateCommands(commands) {
+    const seen = new Set();
+    const filtered = [];
+
+    for (const command of commands) {
+        const canonical = canonicalCommand(command);
+        if (canonical === "status" || canonical === "help" || canonical === "quit") {
+            continue;
+        }
+        if (!seen.has(canonical)) {
+            seen.add(canonical);
+            filtered.push(canonical);
+        }
+    }
+
+    return filtered;
+}
+
+function shortlistPlannerCommands(state, commands) {
+    if (state.phase !== "day" && state.phase !== "night") {
+        return commands;
+    }
+
+    const shortlist = [];
+    const seen = new Set();
+    const seedCandidates = [
+        chooseCommand(state, getPolicyProfile("balanced")),
+        chooseCommand(state, getPolicyProfile("derived-zayan")),
+        state.phase === "day" ? "travel" : "guard",
+        state.phase === "day" ? "repair" : "rite",
+    ]
+        .map(canonicalCommand)
+        .filter(command => commands.includes(command));
+
+    for (const command of seedCandidates) {
+        if (!seen.has(command)) {
+            seen.add(command);
+            shortlist.push(command);
+        }
+        if (shortlist.length >= 3) {
+            break;
+        }
+    }
+
+    return shortlist.length > 0 ? shortlist : commands;
+}
+
+function scoreStateSnapshot(state) {
+    const crewAlive = state.crew.filter(member => member.alive).length;
+    return (
+        (state.miles * 35) +
+        (state.cattle * 12) +
+        (crewAlive * 2500) +
+        (state.morale * 20) -
+        (state.fear * 14) +
+        (state.wagonCondition * 18) +
+        (state.wagonSanctity * 15) +
+        (state.food * 1.5) +
+        (state.supplies * 6) +
+        (state.ammo * 0.4) +
+        (state.cash * 0.2) +
+        (state.blessedGrain * 20) +
+        (state.wardingOil * 15) -
+        (state.mutinyPressure * 15) -
+        (state.herdStress * 5) -
+        (state.herdFatigue * 4) -
+        (state.herdBlight * 6)
+    );
+}
+
+function scoreReport(report) {
+    const summary = report.summary;
+    const outcomeBase = summary.outcome === "victory" ? 100000 : -50000;
+    const failurePenalty =
+        summary.failureCause === "crew-breaks" ? -8000 :
+        summary.failureCause === "wagon-breaks" ? -6000 :
+        summary.failureCause === "herd-lost" ? -9000 :
+        0;
+
+    return (
+        outcomeBase +
+        failurePenalty +
+        (summary.milesReached * 25) +
+        (summary.cattleRemaining * 15) +
+        (summary.crewAlive * 4000) -
+        (summary.weekEnded * 180) +
+        (summary.morale * 15) -
+        (summary.fear * 10) +
+        (summary.wagonCondition * 14) +
+        (summary.wagonSanctity * 12) +
+        (summary.foodRemaining * 1.2) +
+        (summary.suppliesRemaining * 5)
+    );
+}
+
+function recentPlannerCommands(commandHistory, count = 2) {
+    return commandHistory
+        .map(canonicalCommand)
+        .filter(Boolean)
+        .slice(-count);
+}
+
+function countRecentCommand(recentCommands, command) {
+    return recentCommands.filter(entry => entry === command).length;
+}
+
+function livingCrew(state) {
+    return state.crew.filter(member => member.alive);
+}
+
+function averageCrewStat(state, key) {
+    const living = livingCrew(state);
+    if (living.length === 0) {
+        return 0;
+    }
+
+    return average(living.map(member => member[key]));
+}
+
+function plannerCrewControlRisk(state) {
+    const crewAlive = livingCrew(state).length;
+    const averageHealth = averageCrewStat(state, "health");
+    const averageHunger = averageCrewStat(state, "hunger");
+    const effectiveCrew = Math.max(1, crewAlive);
+    const herdLoad = Math.max(0, state.cattle - (effectiveCrew * 95));
+    const strain =
+        herdLoad * 0.12 +
+        Math.max(0, state.herdStress - 40) * 1.3 +
+        Math.max(0, state.herdFatigue - 40) * 1.2 +
+        Math.max(0, state.fear - 55) * 0.9 +
+        Math.max(0, 55 - state.morale) * 0.9 +
+        Math.max(0, 55 - averageHealth) * 0.5 +
+        Math.max(0, averageHunger - 55) * 0.5;
+
+    return round(strain, 2);
+}
+
+function scorePlannerCommand({ state, command, recentCommands }) {
+    const crewAlive = livingCrew(state).length;
+    const averageHealth = averageCrewStat(state, "health");
+    const averageHunger = averageCrewStat(state, "hunger");
+    const controlRisk = plannerCrewControlRisk(state);
+    const travelNeed = Math.max(0, state.destinationMiles - state.miles);
+    const repeats = countRecentCommand(recentCommands, command);
+    let score = scoreStateSnapshot(state) / 1000;
+
+    // Mild anti-loop pressure from the last two commands only.
+    score -= repeats * 6;
+
+    if (state.phase === "day") {
+        if (command === "travel") {
+            score += 60;
+            score += travelNeed <= 120 ? 30 : 0;
+            score -= Math.max(0, 50 - state.wagonCondition) * 1.8;
+            score -= Math.max(0, 42 - state.wagonSanctity) * 1.2;
+            score -= Math.max(0, state.herdFatigue - 48) * 1.6;
+            score -= Math.max(0, state.herdStress - 45) * 1.5;
+            score -= Math.max(0, state.fear - 68) * 1.4;
+            score -= Math.max(0, averageHunger - 62) * 1.1;
+            score -= controlRisk * 0.9;
+        } else if (command === "repair") {
+            score -= 35;
+            score += Math.max(0, 62 - state.wagonCondition) * 3.2;
+            score += Math.max(0, 46 - state.wagonSanctity) * 2.4;
+            score += state.wagonCondition <= 48 ? 24 : 0;
+            score += state.wagonSanctity <= 42 ? 18 : 0;
+            score += state.supplies >= 4 ? 0 : -40;
+        } else if (command === "rest") {
+            score += Math.max(0, state.herdFatigue - 42) * 2.1;
+            score += Math.max(0, state.fear - 54) * 1.7;
+            score += Math.max(0, 56 - state.morale) * 1.4;
+            score += Math.max(0, 62 - averageHealth) * 1.1;
+            score -= travelNeed <= 120 ? 26 : 0;
+        } else if (command === "hunt") {
+            score += Math.max(0, 70 - state.food) * 2.2;
+            score += Math.max(0, 6 - state.ammo) * -8;
+            score -= Math.max(0, state.herdFatigue - 58) * 0.8;
+        } else if (command === "trade") {
+            score += state.canTrade ? 28 : -40;
+            score += Math.max(0, 48 - state.wagonSanctity) * 1.3;
+            score += Math.max(0, 8 - state.supplies) * 2.4;
+            score += Math.max(0, 55 - state.food) * 0.8;
+        } else if (command === "slaughter") {
+            score += Math.max(0, 28 - state.food) * 3;
+            score -= Math.max(0, 470 - state.cattle) * 0.5;
+        }
+    } else if (state.phase === "night") {
+        if (command === "guard") {
+            score += Math.max(0, state.herdStress - 34) * 1.9;
+            score += Math.max(0, state.herdFatigue - 38) * 1.2;
+            score += controlRisk * 0.8;
+            score -= Math.max(0, state.fear - 82) * 0.4;
+        } else if (command === "rite") {
+            score += Math.max(0, 54 - state.wagonSanctity) * 2.4;
+            score += Math.max(0, state.fear - 56) * 1.6;
+            score -= repeats * 3;
+        } else if (command === "whiskey") {
+            score += state.whiskey > 0 ? 18 : -60;
+            score += Math.max(0, 62 - state.morale) * 1.8;
+            score += Math.max(0, state.fear - 64) * 1.1;
+            score -= Math.max(0, averageHunger - 70) * 0.5;
+        } else if (command === "campfire") {
+            score += Math.max(0, 60 - state.morale) * 1.7;
+            score += Math.max(0, state.fear - 58) * 1.2;
+            score += Math.max(0, averageHunger - 60) * 0.4;
+        } else if (command === "night") {
+            score += travelNeed <= 90 ? 32 : 18;
+            score -= Math.max(0, 60 - state.wagonCondition) * 1.8;
+            score -= Math.max(0, state.herdFatigue - 42) * 1.6;
+            score -= Math.max(0, state.fear - 62) * 1.6;
+            score -= Math.max(0, 46 - state.wagonSanctity) * 1.6;
+            score -= controlRisk;
+        } else if (command === "trade") {
+            score += state.canTrade ? 26 : -40;
+            score += Math.max(0, 52 - state.wagonSanctity) * 1.6;
+            score += Math.max(0, 60 - averageHealth) * 1.1;
+            score += Math.max(0, state.fear - 70) * 0.8;
+        }
+    } else if (state.phase === "repair") {
+        if (command === "reinforce") {
+            score += Math.max(0, 70 - state.wagonCondition) * 2.8;
+            score -= Math.max(0, 44 - state.wagonSanctity) * 0.8;
+            score += state.supplies >= 8 ? 18 : -80;
+        } else if (command === "patch") {
+            score += Math.max(0, 62 - state.wagonCondition) * 1.8;
+            score += state.supplies >= 4 ? 12 : -60;
+        } else if (command === "iron") {
+            score += Math.max(0, 58 - state.wagonSanctity) * 2.6;
+            score -= Math.max(0, 34 - state.wagonCondition) * 2.2;
+            score += state.supplies >= 6 ? 14 : -70;
+        }
+    } else if (state.phase === "rations") {
+        if (command === "well") {
+            score += state.food >= 120 ? 28 : -35;
+            score += Math.max(0, 58 - state.morale) * 1.2;
+            score += Math.max(0, state.fear - 60) * 1.1;
+        } else if (command === "moderate") {
+            score += 18;
+        } else if (command === "poor") {
+            score += Math.max(0, 24 - state.food) * 2.4;
+            score -= Math.max(0, 58 - state.morale) * 0.9;
+        }
+    }
+
+    return score;
+}
+
+async function choosePlannerCommand({ seedLabel, commandHistory, state, game, policy }) {
+    if (state.phase === "outfit") {
+        return chooseOutfitCommand(state, policy);
+    }
+
+    const fallbackPolicy = getPolicyProfile(policy.fallbackPolicies?.[0] || "balanced");
+    if (state.phase !== "day" && state.phase !== "night") {
+        return chooseCommand(state, fallbackPolicy);
+    }
+
+    const commands = shortlistPlannerCommands(state, candidateCommands(game.getAvailableCommands()));
+    if (commands.length <= 1) {
+        return commands[0] || chooseCommand(state, fallbackPolicy);
+    }
+
+    const recentCommands = recentPlannerCommands(commandHistory, 2);
+    let bestCommand = commands[0];
+    let bestScore = -Infinity;
+
+    for (const command of commands) {
+        const score = scorePlannerCommand({
+            state,
+            command,
+            recentCommands,
+        });
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestCommand = command;
+        }
+    }
+
+    return bestCommand;
+}
+
 async function runAutoplay({ seedLabel, policyName, captureLog = false, maxSteps = 1000 }) {
     const policy = getPolicyProfile(policyName);
     const { term, lines } = createSilentTerm(captureLog);
@@ -610,10 +915,14 @@ async function runAutoplay({ seedLabel, policyName, captureLog = false, maxSteps
     await game.start({ runMode: "simulation" });
 
     let steps = 0;
+    const commandHistory = [];
     while (game.isActive() && steps < maxSteps) {
         const state = game.getStateSnapshot();
-        const command = chooseCommand(state, policy);
+        const command = policy.planner
+            ? await choosePlannerCommand({ seedLabel, commandHistory, state, game, policy })
+            : chooseCommand(state, policy);
         await game.handleInput(command);
+        commandHistory.push(command);
         steps += 1;
     }
 

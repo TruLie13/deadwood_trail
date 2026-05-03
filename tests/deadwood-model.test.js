@@ -232,15 +232,16 @@ test('trail learning can make the same crew more capable over time', () => {
 });
 
 test('damned post trade costs double per repeated item purchase', () => {
-  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 0), 1);
-  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 1), 2);
-  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 2), 4);
-  assert.equal(DeadwoodModel.damnedTradeCost('day', 'nails', 1), 2);
-  assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 0), 2);
-  assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 1), 4);
-  assert.equal(DeadwoodModel.damnedTradeCost('night', 'cache', 1), 2);
-  assert.equal(DeadwoodModel.damnedTradeCost('night', 'blessing', 2), 8);
-});
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 0, 0), 1);
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 0, 1), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'oil', 1, 1), 4);
+  assert.equal(DeadwoodModel.damnedTradeCost('day', 'nails', 1, 0), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 0, 0), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'vigil', 1, 1), 8);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'blessing', 1, 0), 4);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'cache', 1, 0), 2);
+  assert.equal(DeadwoodModel.damnedTradeCost('night', 'blessing', 2, 0), 8);
+    });
 
 test('westward ambient pressure escalates by region', () => {
   assert.deepEqual(DeadwoodModel.westwardAmbientPressure(200), {
@@ -348,17 +349,43 @@ test('assessCrewConsequence does not turn pure morale favoritism into a food exi
   assert.notDeepEqual(result, { type: 'food-exile', targetId: 2 });
 });
 
-test('assessCrewConsequence can trigger whiskey desertion from repeated bottle favoritism', () => {
+test('assessCrewConsequence can trigger whiskey desertion for the dry hand when bottle favoritism breaks them personally', () => {
   const crew = [
     makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, loyalty: 58 }),
     makeCrewMember(2, { name: 'MARA QUILL', whiskeyReceivedTotal: 3, morale: 44, fear: 30 }),
-    makeCrewMember(3, { name: 'JONAH REED', whiskeyReceivedTotal: 0, morale: 20, fear: 48, loyalty: 56 }),
+    makeCrewMember(3, { name: 'JONAH REED', whiskeyReceivedTotal: 0, morale: 14, fear: 62, loyalty: 56 }),
     makeCrewMember(4, { name: 'ELIAS VOSS', whiskeyReceivedTotal: 0, morale: 18, fear: 50, loyalty: 55 }),
     makeCrewMember(5, { name: 'RUTH CALDWELL', whiskeyReceivedTotal: 0, morale: 22, fear: 46, loyalty: 57 }),
   ];
 
-  const result = DeadwoodModel.assessCrewConsequence(crew, 28, 46);
-  assert.deepEqual(result, { type: 'whiskey-desertion', targetId: 2 });
+  const result = DeadwoodModel.assessCrewConsequence(crew, 46, 46);
+  assert.deepEqual(result, { type: 'whiskey-desertion', targetId: 3 });
+});
+
+test('assessCrewConsequence exiles the visibly favored hand when several others are carrying the burden', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, hunger: 60 }),
+    makeCrewMember(2, { name: 'MARA QUILL', foodReceivedTotal: 12, whiskeyReceivedTotal: 3, guardDutyCount: 1, morale: 58 }),
+    makeCrewMember(3, { name: 'JONAH REED', foodReceivedTotal: 2, whiskeyReceivedTotal: 0, guardDutyCount: 5, morale: 20, fear: 60, hunger: 74 }),
+    makeCrewMember(4, { name: 'ELIAS VOSS', foodReceivedTotal: 1, whiskeyReceivedTotal: 0, guardDutyCount: 4, morale: 18, fear: 62, hunger: 72 }),
+    makeCrewMember(5, { name: 'RUTH CALDWELL', foodReceivedTotal: 1, whiskeyReceivedTotal: 0, guardDutyCount: 4, morale: 16, fear: 58, hunger: 73 }),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 44, 52);
+  assert.deepEqual(result, { type: 'food-exile', targetId: 2 });
+});
+
+test('assessCrewConsequence does not exile or desert over unfairness alone when morale is very high', () => {
+  const crew = [
+    makeCrewMember(1, { name: 'EZEKIEL VALE', role: 'leader', isLeader: true, morale: 94 }),
+    makeCrewMember(2, { name: 'MARA QUILL', foodReceivedTotal: 12, whiskeyReceivedTotal: 3, guardDutyCount: 1, morale: 92 }),
+    makeCrewMember(3, { name: 'JONAH REED', foodReceivedTotal: 2, whiskeyReceivedTotal: 0, guardDutyCount: 5, morale: 70, fear: 45, hunger: 64 }),
+    makeCrewMember(4, { name: 'ELIAS VOSS', foodReceivedTotal: 1, whiskeyReceivedTotal: 0, guardDutyCount: 4, morale: 72, fear: 44, hunger: 63 }),
+    makeCrewMember(5, { name: 'RUTH CALDWELL', foodReceivedTotal: 1, whiskeyReceivedTotal: 0, guardDutyCount: 4, morale: 71, fear: 43, hunger: 62 }),
+  ];
+
+  const result = DeadwoodModel.assessCrewConsequence(crew, 92, 34);
+  assert.equal(result, null);
 });
 
 test('assessCrewConsequence can purge a favored non-leader under paranoid high fear', () => {
