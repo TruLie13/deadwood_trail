@@ -4748,7 +4748,14 @@ namespace DeadwoodEngine {
             if (chance(28 + (reliefPenalty * 4))) {
                 affectCrew({ fear: 10, morale: -2 });
                 affectHerd({ stress: 16 });
-                removeCattle(randInt(2, 7) + herdLossRiskBonus(), "lost", "weakest", "campfire-stampede");
+                let lost = randInt(2, 7) + herdLossRiskBonus();
+                if (state.blessedGrain > 0) {
+                    state.blessedGrain -= 1;
+                    lost = Math.max(0, lost - 4);
+                    affectHerd({ stress: -8, fatigue: -2 });
+                    await Term.writelns("YOU THROW BLESSED GRAIN INTO THE DARK AND TURN PART OF THE PANIC BACK.");
+                }
+                removeCattle(lost, "lost", "weakest", "campfire-stampede");
                 await Term.writelns("THE FLAMES DRAW GLOAM-WALKERS TO THE EDGE OF CAMP. SOME OF THE HERD BOLTS.");
             }
             await endNight();
