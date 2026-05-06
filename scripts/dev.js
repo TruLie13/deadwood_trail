@@ -21,6 +21,9 @@ const reportsDir = path.join(process.cwd(), "reports", "deadwood-runs");
 const fileServer = new static.Server(".");
 
 function sendJson(res, statusCode, payload) {
+    if (res.headersSent || res.writableEnded) {
+        return;
+    }
     res.writeHead(statusCode, { "Content-Type": "application/json" });
     res.end(JSON.stringify(payload));
 }
@@ -84,13 +87,22 @@ http.createServer((req, res) => {
     let filePath = spPath(req.url, assets.dev);
 
     if (req.url === "/") {
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
         res.writeHead(200, { "Content-Type": "text/html" });
         res.write(render(assets.html, cssAssets, jsAssets));
         res.end();
     } else if (filePath.length !== 0) {
+        if (res.headersSent || res.writableEnded) {
+            return;
+        }
         fileServer.serveFile(filePath, 200, {}, req, res);
     } else {
         req.addListener("end", () => {
+            if (res.headersSent || res.writableEnded) {
+                return;
+            }
             fileServer.serve(req, res);
         }).resume();
     }

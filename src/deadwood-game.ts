@@ -9,7 +9,7 @@ declare const App: {
     deadwood: DeadwoodGameApi | null;
 };
 
-type Phase = "outfit" | "day" | "repair" | "trade" | "rations" | "night" | "blight" | "encounter" | "scout" | "ended";
+type Phase = "outfit" | "day" | "repair" | "trade" | "rations" | "night" | "blight" | "encounter" | "scout" | "chest" | "ended";
 type RationLevel = "poor" | "moderate" | "well";
 type DayAction = "travel" | "hunt" | "repair" | "rest" | "trade" | "slaughter" | null;
 type NightAction = "campfire" | "guard" | "whiskey" | "rite" | "night" | "trade" | null;
@@ -19,6 +19,18 @@ type TradeTime = "day" | "night";
 type CrewRole = DeadwoodModel.CrewRole;
 type SpecialistRole = "hunter" | "scout" | "drover" | "hand";
 type ScoutRoutePlan = "face" | "detour" | null;
+type CursedChestTier = "low" | "medium" | "high";
+type CursedChestPlacement = {
+    mile: number;
+    tier: CursedChestTier;
+    resolved: boolean;
+    opened: boolean;
+};
+type PendingTravelContinuation = {
+    mode: "day" | "night";
+    plannedEncounter: EncounterType;
+    blockedEncounter: EncounterType;
+};
 type HuntBulletDebug = {
     shot: number;
     hit: boolean;
@@ -104,6 +116,9 @@ type GameState = {
     damnedTradeHistory: Record<DeadwoodModel.DamnedTradeItem, number>;
     recentCattleLossWeeks: number;
     lastHuntResult: HuntResult | null;
+    cursedChests: CursedChestPlacement[];
+    pendingCursedChestIndex: number | null;
+    pendingTravelContinuation: PendingTravelContinuation | null;
 };
 
 type StoreItem = "food" | "ammo" | "supplies" | "whiskey" | "grain" | "oil";
@@ -244,6 +259,23 @@ type DeadwoodActionRecord = {
     phase: ReportPhase;
     action: string;
     detail: string;
+};
+
+type DeadwoodCursedChestPlanRecord = {
+    index: number;
+    mile: number;
+    tier: CursedChestTier;
+};
+
+type DeadwoodCursedChestResolutionRecord = {
+    index: number;
+    mile: number;
+    tier: CursedChestTier;
+    foundWeek: number | null;
+    phase: ReportPhase | null;
+    opened: boolean | null;
+    reward: string | null;
+    curse: string | null;
 };
 
 type DeadwoodSnapshot = {
@@ -398,6 +430,8 @@ type DeadwoodRunReport = {
     specialists: Record<SpecialistRole, DeadwoodSpecialistHistoryRecord[]>;
     actions: DeadwoodActionRecord[];
     events: DeadwoodEventRecord[];
+    cursedChestsPlanned: DeadwoodCursedChestPlanRecord[];
+    cursedChestsResolved: DeadwoodCursedChestResolutionRecord[];
     snapshots: DeadwoodSnapshot[];
     persistence: {
         attempted: boolean;
@@ -608,7 +642,7 @@ namespace DeadwoodEngine {
     function createEmptyRunReport(): DeadwoodRunReport {
         const livingPeakVitals = livingCrewPeakVitals();
         return {
-            schemaVersion: 1,
+            schemaVersion: 2,
             game: "deadwood-trail",
             runId: createRunId(),
             seed,
@@ -714,6 +748,8 @@ namespace DeadwoodEngine {
             specialists: { hunter: [], scout: [], drover: [], hand: [] },
             actions: [],
             events: [],
+            cursedChestsPlanned: [],
+            cursedChestsResolved: [],
             snapshots: [],
             persistence: {
                 attempted: false,
@@ -737,6 +773,21 @@ namespace DeadwoodEngine {
         capturedSnapshotKeys.clear();
         runResolution = null;
         currentRunReport = createEmptyRunReport();
+        currentRunReport.cursedChestsPlanned = state.cursedChests.map((chest, index) => ({
+            index,
+            mile: chest.mile,
+            tier: chest.tier,
+        }));
+        currentRunReport.cursedChestsResolved = state.cursedChests.map((chest, index) => ({
+            index,
+            mile: chest.mile,
+            tier: chest.tier,
+            foundWeek: null,
+            phase: null,
+            opened: null,
+            reward: null,
+            curse: null,
+        }));
         captureRunSnapshot("week-start");
         publishRunReportState();
     }
@@ -825,6 +876,35 @@ namespace DeadwoodEngine {
             title,
             detail,
         });
+    }
+
+    function recordCursedChestFound(index: number, phase: ReportPhase) {
+        if (!currentRunReport) {
+            return;
+        }
+
+        const record = currentRunReport.cursedChestsResolved[index];
+        if (!record) {
+            return;
+        }
+
+        record.foundWeek = state.week;
+        record.phase = phase;
+    }
+
+    function recordCursedChestResolved(index: number, opened: boolean, reward: string | null, curse: string | null) {
+        if (!currentRunReport) {
+            return;
+        }
+
+        const record = currentRunReport.cursedChestsResolved[index];
+        if (!record) {
+            return;
+        }
+
+        record.opened = opened;
+        record.reward = reward;
+        record.curse = curse;
     }
 
     function recordEncounterChoice(encounter: EncounterType, choice: string) {
@@ -1031,7 +1111,33 @@ namespace DeadwoodEngine {
         root.DeadwoodTrailReports.lastCompletedRun = JSON.parse(JSON.stringify(currentRunReport));
     }
 
+    function rollCursedChestPlacements(): CursedChestPlacement[] {
+        const placements: CursedChestPlacement[] = [];
+
+        if (chance(70)) {
+            const firstMile = randInt(520, 760);
+            placements.push({
+                mile: firstMile,
+                tier: chance(60) ? "medium" : "low",
+                resolved: false,
+                opened: false,
+            });
+
+            if (chance(20)) {
+                placements.push({
+                    mile: randInt(760, 850),
+                    tier: chance(70) ? "high" : "medium",
+                    resolved: false,
+                    opened: false,
+                });
+            }
+        }
+
+        return placements.sort((left, right) => left.mile - right.mile);
+    }
+
     function createInitialState(): GameState {
+        const cursedChests = rollCursedChestPlacements();
         const crew = createInitialCrew();
         const crewSummary = summarizeCrew(crew);
         const herd = createInitialHerd(500);
@@ -1096,6 +1202,9 @@ namespace DeadwoodEngine {
             },
             recentCattleLossWeeks: 0,
             lastHuntResult: null,
+            cursedChests,
+            pendingCursedChestIndex: null,
+            pendingTravelContinuation: null,
         };
     }
 
@@ -1408,6 +1517,8 @@ namespace DeadwoodEngine {
                             ["blighted stores", `${state.blightedFood}`],
                             ["pending blight", `${state.pendingBlightedFood}`],
                             ["damned trades", `${state.damnedTradeCount}/2 used`],
+                            ["chest 1", state.cursedChests[0] ? `${state.cursedChests[0].mile} mi / ${state.cursedChests[0].resolved ? (state.cursedChests[0].opened ? "opened" : "left") : "pending"}` : "none"],
+                            ["chest 2", state.cursedChests[1] ? `${state.cursedChests[1].mile} mi / ${state.cursedChests[1].resolved ? (state.cursedChests[1].opened ? "opened" : "left") : "pending"}` : "none"],
                             ["recent cattle loss", `${state.recentCattleLossWeeks} week(s)`],
                             ["rite ready", debugBoolean(state.hasOccultist)],
                             ["hunt bonus", debugBoolean(state.occultHuntBonus)],
@@ -2078,13 +2189,14 @@ namespace DeadwoodEngine {
             : [...living].sort((left, right) => left.guardDutyCount - right.guardDutyCount || right.health - left.health);
         const chosen: CrewMember[] = [];
         while (chosen.length < Math.min(2, sorted.length)) {
-            const band = pressuredDuty
+            const band = (pressuredDuty
                 ? sorted.slice(0, Math.min(2, sorted.length))
-                : sorted.slice(0, Math.min(3, sorted.length));
-            const pick = band[randInt(0, band.length - 1)];
-            if (!chosen.includes(pick)) {
-                chosen.push(pick);
+                : sorted.slice(0, Math.min(3, sorted.length)))
+                .filter(member => !chosen.includes(member));
+            if (band.length <= 0) {
+                break;
             }
+            chosen.push(band[randInt(0, band.length - 1)]);
         }
 
         for (const member of chosen) {
@@ -2177,7 +2289,7 @@ namespace DeadwoodEngine {
             removeCrewMember(
                 target,
                 "deserts",
-                `${crewFirstName(target)} VANISHES BEFORE DAWN WITH THE BOTTLE. WHATEVER THE CREW WAS GOING TO DO ABOUT IT, THE DECISION IS MADE FOR THEM.`,
+                `${crewFirstName(target)} VANISHES BEFORE DAWN AFTER ONE TOO MANY NIGHTS OF THE OTHER CREW MEMBERS GETTING MORE WHISKEY THAN THEY SHOULD HAVE.`,
                 { morale: -4, fear: 6, loyalty: -5 },
             );
             return;
@@ -2699,6 +2811,23 @@ namespace DeadwoodEngine {
         return random() * 100 < percent;
     }
 
+    function weightedPick<T>(entries: Array<{ item: T; weight: number }>): T {
+        const total = entries.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0);
+        if (total <= 0) {
+            return entries[0].item;
+        }
+
+        let roll = random() * total;
+        for (const entry of entries) {
+            roll -= Math.max(0, entry.weight);
+            if (roll < 0) {
+                return entry.item;
+            }
+        }
+
+        return entries[entries.length - 1].item;
+    }
+
     function locationName(): string {
         if (state.miles >= state.destinationMiles) {
             return "THE SILVER FOLD";
@@ -2712,6 +2841,272 @@ namespace DeadwoodEngine {
         }
 
         return current;
+    }
+
+    function nextCursedChestCrossed(startMiles: number, endMiles: number): number | null {
+        const index = state.cursedChests.findIndex(chest => !chest.resolved && chest.mile > startMiles && chest.mile <= endMiles);
+        return index >= 0 ? index : null;
+    }
+
+    function robberyAttemptChance(): number {
+        if (state.lastNightAction === "night" || state.miles >= 520) {
+            return 0;
+        }
+
+        if (state.miles < 310) {
+            return 10;
+        }
+
+        return 14;
+    }
+
+    async function resolveNightRobberyAttempt() {
+        const attemptChance = robberyAttemptChance();
+        if (attemptChance <= 0 || !chance(attemptChance)) {
+            return;
+        }
+
+        const lostSoul = state.miles >= 310;
+        const prowler = lostSoul ? "A LOST SOUL" : "A CAMP THIEF";
+        if (state.lastNightAction === "guard") {
+            recordEvent("night-robbery-thwarted", "Night Robbery Thwarted", prowler, "night");
+            affectCrew({ morale: 1, loyalty: 1 });
+            state.pendingMessages.push(`${prowler} TESTS THE CAMP, BUT THE WATCH CATCHES IT BEFORE IT CAN TAKE ANYTHING.`);
+            return;
+        }
+
+        const options: Array<{ item: "food" | "ammo" | "supplies" | "cash" | "whiskey" | "oil" | "grain"; weight: number }> = [];
+        if (!lostSoul) {
+            if (state.food > 0) options.push({ item: "food", weight: 5 });
+            if (state.supplies > 0) options.push({ item: "supplies", weight: 4 });
+            if (state.cash > 0) options.push({ item: "cash", weight: 4 });
+            if (state.ammo > 0) options.push({ item: "ammo", weight: 3 });
+            if (state.whiskey > 0) options.push({ item: "whiskey", weight: 2 });
+            if (state.wardingOil > 0) options.push({ item: "oil", weight: 1 });
+        } else {
+            if (state.blessedGrain > 0) {
+                options.push({ item: "grain", weight: 4 });
+            } else if (state.wardingOil > 0) {
+                options.push({ item: "oil", weight: 4 });
+            } else if (state.supplies > 0) {
+                options.push({ item: "supplies", weight: 5 });
+            } else {
+                if (state.supplies > 0) options.push({ item: "supplies", weight: 5 });
+                if (state.blessedGrain > 0) options.push({ item: "grain", weight: 4 });
+                if (state.wardingOil > 0) options.push({ item: "oil", weight: 4 });
+                if (state.whiskey > 0) options.push({ item: "whiskey", weight: 3 });
+                if (state.ammo > 0) options.push({ item: "ammo", weight: 2 });
+                if (state.food > 0) options.push({ item: "food", weight: 2 });
+            }
+        }
+
+        if (options.length === 0) {
+            recordEvent("night-robbery-empty", "Night Robbery", prowler, "night");
+            affectCrew({ fear: lostSoul ? 5 : 3, morale: -1 });
+            state.pendingMessages.push(`${prowler} WORKS THROUGH THE EDGE OF CAMP, FINDS LITTLE WORTH TAKING, AND LEAVES THE CREW WORSE FOR HAVING HEARD IT.`);
+            return;
+        }
+
+        const stolen = weightedPick(options);
+        let amount = 0;
+        let label = "";
+
+        if (stolen === "food") {
+            amount = Math.min(state.food, randInt(12, 24));
+            state.food -= amount;
+            label = `${amount} FOOD`;
+        } else if (stolen === "supplies") {
+            amount = Math.min(state.supplies, randInt(2, 5));
+            state.supplies -= amount;
+            label = `${amount} SUPPLIES`;
+        } else if (stolen === "cash") {
+            amount = Math.min(state.cash, randInt(8, 18));
+            state.cash -= amount;
+            label = `$${amount}`;
+        } else if (stolen === "ammo") {
+            amount = Math.min(state.ammo, lostSoul ? randInt(2, 5) : randInt(3, 8));
+            state.ammo -= amount;
+            label = `${amount} AMMO`;
+        } else if (stolen === "whiskey") {
+            amount = Math.min(state.whiskey, randInt(1, 2));
+            state.whiskey -= amount;
+            label = `${amount} WHISKEY`;
+        } else if (stolen === "oil") {
+            amount = Math.min(state.wardingOil, 1);
+            state.wardingOil -= amount;
+            label = `${amount} WARDING OIL`;
+        } else {
+            amount = Math.min(state.blessedGrain, 1);
+            state.blessedGrain -= amount;
+            label = `${amount} BLESSED GRAIN`;
+        }
+
+        recordEvent("night-robbery", "Night Robbery", `${prowler} stole ${label}`, "night");
+        affectCrew({ fear: lostSoul ? 8 : 4, morale: -3, loyalty: -1 });
+        state.pendingMessages.push(`${prowler} SLIPS THROUGH CAMP AND TAKES ${label}. BY MORNING, EVERYONE IS ANGRIER AND LESS SURE OF THE DARK.`);
+    }
+
+    function selectCursedChestReward(tier: CursedChestTier): { label: string; apply: () => void } {
+        const options: Array<{ item: "food" | "supplies" | "ammo" | "cash" | "oil" | "grain" | "whiskey"; weight: number }> = [
+            { item: "food", weight: state.food < 90 ? 5 : 2 },
+            { item: "supplies", weight: state.supplies < 12 ? 4 : 2 },
+            { item: "ammo", weight: state.ammo < 10 ? 4 : 2 },
+            { item: "cash", weight: state.cash < 20 ? 3 : 2 },
+            { item: "oil", weight: state.wardingOil === 0 ? 3 : 1 },
+            { item: "grain", weight: state.blessedGrain === 0 ? 2 : 1 },
+            { item: "whiskey", weight: state.whiskey === 0 ? 2 : 1 },
+        ];
+        const reward = weightedPick(options);
+
+        if (reward === "food") {
+            const amount = tier === "low" ? randInt(16, 24) : tier === "medium" ? randInt(26, 38) : randInt(40, 60);
+            return {
+                label: `${amount} FOOD`,
+                apply: () => { state.food += amount; },
+            };
+        }
+
+        if (reward === "supplies") {
+            const amount = tier === "low" ? randInt(5, 7) : tier === "medium" ? randInt(8, 11) : randInt(12, 16);
+            return {
+                label: `${amount} SUPPLIES`,
+                apply: () => { state.supplies += amount; },
+            };
+        }
+
+        if (reward === "ammo") {
+            const amount = tier === "low" ? randInt(8, 12) : tier === "medium" ? randInt(12, 16) : randInt(18, 24);
+            return {
+                label: `${amount} AMMO`,
+                apply: () => { state.ammo += amount; },
+            };
+        }
+
+        if (reward === "cash") {
+            const amount = tier === "low" ? randInt(10, 16) : tier === "medium" ? randInt(18, 26) : randInt(28, 40);
+            return {
+                label: `$${amount}`,
+                apply: () => { state.cash += amount; },
+            };
+        }
+
+        if (reward === "oil") {
+            const amount = tier === "low" ? 1 : 2;
+            return {
+                label: `${amount} WARDING OIL`,
+                apply: () => { state.wardingOil += amount; },
+            };
+        }
+
+        if (reward === "grain") {
+            const amount = tier === "high" ? 2 : 1;
+            return {
+                label: `${amount} BLESSED GRAIN`,
+                apply: () => { state.blessedGrain += amount; },
+            };
+        }
+
+        const amount = tier === "low" ? 1 : tier === "medium" ? 2 : randInt(2, 3);
+        return {
+            label: `${amount} WHISKEY`,
+            apply: () => { state.whiskey += amount; },
+        };
+    }
+
+    function selectCursedChestCurse(tier: CursedChestTier): { label: string; apply: () => void } {
+        const curse = weightedPick([
+            { item: "fear", weight: 4 },
+            { item: "sanctity", weight: 4 },
+            { item: "wagon", weight: 3 },
+            { item: "herd", weight: 3 },
+            { item: "crew", weight: 2 },
+        ] as Array<{ item: "fear" | "sanctity" | "wagon" | "herd" | "crew"; weight: number }>);
+
+        if (curse === "fear") {
+            const amount = tier === "low" ? randInt(8, 12) : tier === "medium" ? randInt(12, 18) : randInt(18, 26);
+            return {
+                label: `FEAR +${amount}`,
+                apply: () => { affectCrew({ fear: amount, morale: tier === "high" ? -2 : -1 }); },
+            };
+        }
+
+        if (curse === "sanctity") {
+            const amount = tier === "low" ? randInt(8, 11) : tier === "medium" ? randInt(12, 18) : randInt(18, 26);
+            return {
+                label: `SANCTITY ${signedValue(-amount)}`,
+                apply: () => { state.wagonSanctity -= amount; },
+            };
+        }
+
+        if (curse === "wagon") {
+            const amount = tier === "low" ? randInt(5, 8) : tier === "medium" ? randInt(8, 12) : randInt(12, 18);
+            return {
+                label: `STRUCTURE ${signedValue(-amount)}`,
+                apply: () => { state.wagonCondition -= amount; },
+            };
+        }
+
+        if (curse === "herd") {
+            const stress = tier === "low" ? randInt(8, 12) : tier === "medium" ? randInt(12, 16) : randInt(16, 22);
+            const blight = tier === "low" ? randInt(2, 4) : tier === "medium" ? randInt(4, 7) : randInt(7, 10);
+            return {
+                label: `HERD STRESS +${stress}, BLIGHT +${blight}`,
+                apply: () => { affectHerd({ stress, blight }); },
+            };
+        }
+
+        const healthLoss = tier === "low" ? 1 : tier === "medium" ? 2 : 3;
+        const moraleLoss = tier === "low" ? 2 : tier === "medium" ? 4 : 6;
+        return {
+            label: `CREW HEALTH ${signedValue(-healthLoss)}, MORALE ${signedValue(-moraleLoss)}`,
+            apply: () => { affectCrew({ health: -healthLoss, morale: -moraleLoss, fear: tier === "high" ? 4 : 2 }); },
+        };
+    }
+
+    async function continueAfterCursedChest() {
+        const continuation = state.pendingTravelContinuation;
+        state.pendingTravelContinuation = null;
+
+        normalizeState();
+        if (await evaluateEndings()) {
+            return;
+        }
+
+        if (!continuation) {
+            state.phase = "day";
+            await printDayPrompt();
+            return;
+        }
+
+        if (continuation.mode === "night") {
+            state.phase = "night";
+            await nightEvent();
+            if (state.pendingEncounter || state.pendingCursedChestIndex !== null) {
+                return;
+            }
+            await reachLandmarks();
+            await endNight();
+            return;
+        }
+
+        state.phase = "day";
+        await reachLandmarks();
+        if (await evaluateEndings()) {
+            clearScoutRoutePlan();
+            return;
+        }
+
+        if (continuation.plannedEncounter) {
+            clearScoutRoutePlan();
+            await triggerEncounterByType(continuation.plannedEncounter);
+        } else {
+            clearScoutRoutePlan();
+            await trailEvent(continuation.blockedEncounter);
+        }
+        if (state.pendingEncounter || state.pendingCursedChestIndex !== null) {
+            return;
+        }
+        await transitionToRations();
     }
 
     function fearLabel(): string {
@@ -3072,6 +3467,22 @@ namespace DeadwoodEngine {
         await printSection("BLIGHT", [
             `${state.pendingBlightedFood} FOOD IS BLIGHTED.`,
             "TYPE TAKE TO STOW THE BLIGHTED MEAT WITH YOUR STORES, OR LEAVE TO WALK AWAY FROM IT.",
+        ]);
+        Term.prompt();
+    }
+
+    async function printCursedChestPrompt() {
+        const pendingChest = state.pendingCursedChestIndex === null ? null : state.cursedChests[state.pendingCursedChestIndex];
+        if (!pendingChest) {
+            await reprompt();
+            return;
+        }
+
+        await printSection("CHEST", [
+            `AT MILE ${pendingChest.mile}, YOU FIND A CHEST HALF-BURIED IN THE SALT.`,
+            "IT IS SEALED, INTACT, AND PLAINLY WRONG.",
+            "OPEN   - TAKE WHAT IS INSIDE AND ACCEPT THE CURSE THAT COMES WITH IT",
+            "LEAVE  - WALK AWAY AND KEEP THE DRIVE CLEANER",
         ]);
         Term.prompt();
     }
@@ -3907,6 +4318,11 @@ namespace DeadwoodEngine {
             return;
         }
 
+        if (state.phase === "chest") {
+            await handleCursedChestCommand(input);
+            return;
+        }
+
         if (state.phase === "encounter") {
             await handleEncounterCommand(input);
             return;
@@ -3943,6 +4359,9 @@ namespace DeadwoodEngine {
                 break;
             case "blight":
                 await printBlightPrompt();
+                break;
+            case "chest":
+                await printCursedChestPrompt();
                 break;
             case "encounter":
                 await printEncounterPrompt();
@@ -4011,6 +4430,11 @@ namespace DeadwoodEngine {
                 "WHISKEY   - SPEND WHISKEY FOR A MORALE SPIKE",
                 "RITE      - TRADE COMFORT FOR SUPERNATURAL CLARITY",
                 "NIGHT     - NIGHT DRIVE FOR DISTANCE AND DANGER",
+            ];
+        } else if (state.phase === "chest") {
+            lines = [
+                "OPEN      - TAKE THE REWARD AND THE CURSE",
+                "LEAVE     - WALK AWAY AND CONTINUE THE DRIVE",
             ];
         } else if (state.phase === "encounter") {
             lines = [
@@ -4165,6 +4589,7 @@ namespace DeadwoodEngine {
             state.occultHuntBonus = false;
             const plannedEncounter = state.activeScoutRoutePlan === "face" ? state.activeScoutEncounter : null;
             const detourPenalty = state.activeScoutRoutePlan === "detour" ? state.activeScoutDetourMiles : 0;
+            const startMiles = state.miles;
             let miles = travelMiles(55, 95);
             if (detourPenalty > 0) {
                 miles = Math.max(12, miles - detourPenalty);
@@ -4185,6 +4610,22 @@ namespace DeadwoodEngine {
             await Term.writelns(travelWearLine(wear, fearGain));
             if (detourPenalty > 0 && state.activeScoutEncounter) {
                 await Term.writelns(`YOU TAKE THE LONGER LINE AND GIVE ${scoutEncounterName(state.activeScoutEncounter)} A WIDE BERTH.`);
+            }
+
+            const chestIndex = nextCursedChestCrossed(startMiles, state.miles);
+            if (chestIndex !== null) {
+                state.pendingTravelContinuation = {
+                    mode: "day",
+                    plannedEncounter,
+                    blockedEncounter: state.activeScoutRoutePlan === "detour" ? state.activeScoutEncounter : null,
+                };
+                state.pendingCursedChestIndex = chestIndex;
+                state.phase = "chest";
+                recordCursedChestFound(chestIndex, "day");
+                recordEvent("cursed-chest-found", "Cursed Chest", `mile ${state.cursedChests[chestIndex].mile}`, "day");
+                await Term.writelns(`AT MILE ${state.cursedChests[chestIndex].mile}, SOMETHING HALF-BURIED IN THE SALT CATCHES THE EYE OF THE LEAD HAND.`);
+                await printCursedChestPrompt();
+                return;
             }
 
             await reachLandmarks();
@@ -4838,6 +5279,7 @@ namespace DeadwoodEngine {
             recordAction("night", "night-drive");
             state.lastNightAction = "night";
             state.nightHuntPenalty = true;
+            const startMiles = state.miles;
             const miles = travelMiles(18, 36);
             const fearGain = 16;
             const wear = randInt(5, 9);
@@ -4854,6 +5296,23 @@ namespace DeadwoodEngine {
             });
             await Term.writelns(`YOU NIGHT DRIVE THROUGH THE VEIL AND STEAL ${miles} MILES FROM THE DARK.`);
             await Term.writelns(nightDriveLine(wear, fearGain));
+
+            const chestIndex = nextCursedChestCrossed(startMiles, state.miles);
+            if (chestIndex !== null) {
+                state.pendingTravelContinuation = {
+                    mode: "night",
+                    plannedEncounter: null,
+                    blockedEncounter: null,
+                };
+                state.pendingCursedChestIndex = chestIndex;
+                state.phase = "chest";
+                recordCursedChestFound(chestIndex, "night");
+                recordEvent("cursed-chest-found", "Cursed Chest", `mile ${state.cursedChests[chestIndex].mile}`, "night");
+                await Term.writelns(`SOMEWHERE AROUND MILE ${state.cursedChests[chestIndex].mile}, YOUR LANTERN LIGHT FINDS A CHEST SITTING OPENLY WHERE IT SHOULD NOT BE.`);
+                await printCursedChestPrompt();
+                return;
+            }
+
             await nightEvent();
             if (state.phase === "encounter") {
                 return;
@@ -4911,6 +5370,50 @@ namespace DeadwoodEngine {
 
         await Term.writelns("TYPE TAKE OR LEAVE.");
         await printBlightPrompt();
+    }
+
+    async function handleCursedChestCommand(input: string) {
+        const index = state.pendingCursedChestIndex;
+        const chest = index === null ? null : state.cursedChests[index];
+        const chestPhase: ReportPhase = state.pendingTravelContinuation?.mode === "night" ? "night" : "day";
+        if (!chest) {
+            await continueAfterCursedChest();
+            return;
+        }
+        const chestIndex = index!;
+
+        if (input === "leave" || input === "back") {
+            chest.resolved = true;
+            chest.opened = false;
+            state.pendingCursedChestIndex = null;
+            recordAction("chest", "leave", `mile ${chest.mile}`);
+            recordCursedChestResolved(chestIndex, false, null, null);
+            recordEvent("cursed-chest-left", "Cursed Chest Left", `mile ${chest.mile}`, chestPhase);
+            await Term.writelns("YOU LEAVE THE CHEST WHERE IT LIES AND KEEP THE DRIVE CLEANER FOR IT.");
+            await continueAfterCursedChest();
+            return;
+        }
+
+        if (input !== "open") {
+            await Term.writelns("TYPE OPEN OR LEAVE.");
+            await printCursedChestPrompt();
+            return;
+        }
+
+        const reward = selectCursedChestReward(chest.tier);
+        const curse = selectCursedChestCurse(chest.tier);
+        reward.apply();
+        curse.apply();
+        chest.resolved = true;
+        chest.opened = true;
+        state.pendingCursedChestIndex = null;
+        recordAction("chest", "open", `mile ${chest.mile} / ${chest.tier}`);
+        recordCursedChestResolved(chestIndex, true, reward.label, curse.label);
+        recordEvent("cursed-chest-opened", "Cursed Chest Opened", `mile ${chest.mile}`, chestPhase);
+        await Term.writelns("YOU BREAK THE SEAL AND TAKE WHAT THE CHEST OFFERS.");
+        await Term.writelns(`GAINED: ${reward.label}.`);
+        await Term.writelns(`PRICE: ${curse.label}.`);
+        await continueAfterCursedChest();
     }
 
     async function handleEncounterCommand(input: string) {
@@ -5078,7 +5581,7 @@ namespace DeadwoodEngine {
     }
 
     async function endNight() {
-        resolveNightDecay();
+        await resolveNightDecay();
         resolveMutinyPressure();
         resolveCrewConsequences();
         normalizeState();
@@ -5120,8 +5623,9 @@ namespace DeadwoodEngine {
         updateRunPeaks();
     }
 
-    function resolveNightDecay() {
-        affectCrew({ fear: 3, hunger: 1 });
+    async function resolveNightDecay() {
+        const baseNightFear = state.lastNightAction === "whiskey" ? 0 : 3;
+        affectCrew({ fear: baseNightFear, hunger: 1 });
         state.wagonSanctity -= 2;
         const ambient = westwardAmbientPressure();
         if (ambient.sanctity !== 0) {
@@ -5158,6 +5662,8 @@ namespace DeadwoodEngine {
         } else {
             state.pendingMessages.push("CAUSE: THIS FAR WEST, THE TRAIL ITSELF WEARS ON THE DRIVE. EVEN RESTED WEEKS FEED FEAR, BLIGHT, AND THE LOSS OF SANCTITY.");
         }
+
+        await resolveNightRobberyAttempt();
 
         if (state.lastNightAction !== "night" && chance(30)) {
             if (state.wardingOil > 0) {
@@ -5793,6 +6299,10 @@ namespace DeadwoodEngine {
 
         if (state.phase === "blight") {
             return ["take", "leave", "status", "help", "quit"];
+        }
+
+        if (state.phase === "chest") {
+            return ["open", "leave", "status", "help", "quit"];
         }
 
         if (state.phase === "encounter") {
