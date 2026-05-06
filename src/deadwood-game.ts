@@ -325,6 +325,7 @@ type DeadwoodRunReport = {
     summary: {
         outcome: RunOutcome | null;
         failureCause: FailureCause;
+        score: number | null;
         weekEnded: number;
         milesReached: number;
         destinationMiles: number;
@@ -362,6 +363,7 @@ type DeadwoodRunReport = {
             fallbackAttempts: number;
             shotsFired: number;
             hits: number;
+            perfectHunts: number;
             cleanFood: number;
             blightedFood: number;
         };
@@ -448,7 +450,43 @@ type DeadwoodEngineApi = DeadwoodGameApi & {
     getSeed: () => number | string | null;
 };
 
+type VictoryScoreInput = {
+    outcome: RunOutcome;
+    cattleRemaining: number;
+    cashRemaining: number;
+    weekEnded: number;
+    morale: number;
+    wagonCondition: number;
+    wagonSanctity: number;
+    crew: Array<Pick<DeadwoodRunCrewSnapshot, "alive" | "isLeader">>;
+    thwartedRobberies: number;
+    perfectHunts: number;
+};
+
 namespace DeadwoodEngine {
+    export function calculateVictoryScore(input: VictoryScoreInput): number | null {
+        if (input.outcome !== "victory") {
+            return null;
+        }
+
+        const leaderAlive = input.crew.some(member => member.alive && member.isLeader);
+        const nonLeaderAlive = input.crew.filter(member => member.alive && !member.isLeader).length;
+        const weekPenalty = Math.max(0, input.weekEnded - 20) * 30;
+        const rawScore =
+            (input.cattleRemaining * 1.5) +
+            (input.cashRemaining * 1.0) +
+            (leaderAlive ? 80 : 0) +
+            (nonLeaderAlive * 35) +
+            (input.wagonCondition * 0.8) +
+            (input.morale * 0.5) +
+            (input.wagonSanctity * 0.35) +
+            (Math.max(0, input.thwartedRobberies) * 10) +
+            (Math.max(0, input.perfectHunts) * 25) -
+            weekPenalty;
+
+        return Math.max(0, Math.round(rawScore));
+    }
+
     export function createGame(deps: DeadwoodGameDependencies = {}): DeadwoodEngineApi {
     const Term: DeadwoodTermPort = deps.term ?? {
         clearScreen: () => undefined,
@@ -653,6 +691,7 @@ namespace DeadwoodEngine {
             summary: {
                 outcome: null,
                 failureCause: null,
+                score: null,
                 weekEnded: state.week,
                 milesReached: state.miles,
                 destinationMiles: state.destinationMiles,
@@ -679,7 +718,7 @@ namespace DeadwoodEngine {
                 nightActions: { campfire: 0, guard: 0, whiskey: 0, rite: 0, night: 0, trade: 0 },
                 rationChoices: { poor: 0, moderate: 0, well: 0 },
                 blight: { found: 0, taken: 0, left: 0, consumed: 0, contaminated: 0 },
-                hunt: { attempts: 0, fallbackAttempts: 0, shotsFired: 0, hits: 0, cleanFood: 0, blightedFood: 0 },
+                hunt: { attempts: 0, fallbackAttempts: 0, shotsFired: 0, hits: 0, perfectHunts: 0, cleanFood: 0, blightedFood: 0 },
                 scout: { warnings: 0, finds: 0, faced: 0, detoured: 0 },
                 specialists: createSpecialistCounterMap(),
                 crewConsequences: {
@@ -1074,12 +1113,28 @@ namespace DeadwoodEngine {
         const desertedCount = currentRunReport.crew.losses.filter(loss => loss.type === "desertion").length;
         const startedAt = new Date(currentRunReport.startedAt).getTime();
         const endedAt = Date.now();
+        const endCrew = state.crew.map(createCrewSnapshot);
+        const thwartedRobberies = currentRunReport.counters.events["night-robbery-thwarted"] ?? 0;
+        const perfectHunts = currentRunReport.counters.hunt.perfectHunts ?? 0;
+        const score = calculateVictoryScore({
+            outcome,
+            cattleRemaining: state.cattle,
+            cashRemaining: state.cash,
+            weekEnded: state.week,
+            morale: state.morale,
+            wagonCondition: state.wagonCondition,
+            wagonSanctity: state.wagonSanctity,
+            crew: endCrew,
+            thwartedRobberies,
+            perfectHunts,
+        });
 
         currentRunReport.endedAt = new Date(endedAt).toISOString();
         currentRunReport.durationMs = Number.isNaN(startedAt) ? null : endedAt - startedAt;
         currentRunReport.summary = {
             outcome,
             failureCause,
+            score,
             weekEnded: state.week,
             milesReached: Math.min(state.miles, state.destinationMiles),
             destinationMiles: state.destinationMiles,
@@ -1101,7 +1156,7 @@ namespace DeadwoodEngine {
             wagonSanctity: state.wagonSanctity,
             landmarksReached: [...state.reachedLandmarks],
         };
-        currentRunReport.crew.end = state.crew.map(createCrewSnapshot);
+        currentRunReport.crew.end = endCrew;
         publishRunReportState();
         root.DeadwoodTrailReports = root.DeadwoodTrailReports ?? {
             currentRun: null,
@@ -4106,6 +4161,9 @@ namespace DeadwoodEngine {
             currentRunReport.counters.hunt.attempts += 1;
             currentRunReport.counters.hunt.shotsFired += result.bulletsSpent;
             currentRunReport.counters.hunt.hits += result.hits;
+            if (result.bulletsSpent === FULL_HUNT_AMMO && result.hits === FULL_HUNT_AMMO) {
+                currentRunReport.counters.hunt.perfectHunts += 1;
+            }
             currentRunReport.counters.hunt.cleanFood += result.cleanFood;
             currentRunReport.counters.hunt.blightedFood += result.blightedFood;
             currentRunReport.counters.blight.found += result.blightedFood;
@@ -4265,6 +4323,8 @@ namespace DeadwoodEngine {
             await Term.writelns(" RUN COMPLETE.");
         }
         await Term.writelns(` FINAL TALLY: CATTLE ${state.cattle}   WEEKS ${state.week}   MILES ${Math.min(state.miles, state.destinationMiles)}/${state.destinationMiles}`);
+        const finalScore = currentRunReport?.summary.score ?? null;
+        await Term.writelns(` SCORE: ${finalScore === null ? "NO SCORE" : finalScore}`);
         await persistRunReport();
         await Term.writelns(' TYPE "RUN DEADWOOD" TO START A NEW DRIVE.');
         Term.prompt();

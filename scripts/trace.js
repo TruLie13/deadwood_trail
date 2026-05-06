@@ -496,6 +496,9 @@ function summarizeTraceRuns(runs, template, reportPath, seedBase) {
     const crewAlive = runs.map(run => run.report.summary.crewAlive);
     const morale = runs.map(run => run.report.summary.morale);
     const fear = runs.map(run => run.report.summary.fear);
+    const scores = runs
+        .map(run => run.report.summary.score)
+        .filter(score => typeof score === "number");
     const fidelity = runs.map(run => run.trace.fidelity);
     const exact = runs.map(run => run.trace.exact);
     const contextual = runs.map(run => run.trace.contextual);
@@ -534,6 +537,7 @@ function summarizeTraceRuns(runs, template, reportPath, seedBase) {
             averageMilesReached: round(average(miles)),
             averageCattleRemaining: round(average(cattle)),
             averageCrewAlive: round(average(crewAlive)),
+            averageScore: scores.length > 0 ? round(average(scores)) : null,
             averageMorale: round(average(morale)),
             averageFear: round(average(fear)),
         },
@@ -586,6 +590,7 @@ function buildSummaryMarkdown(summary) {
         `- Miles reached: ${summary.sourceSummary.milesReached}`,
         `- Cattle remaining: ${summary.sourceSummary.cattleRemaining}`,
         `- Crew alive: ${summary.sourceSummary.crewAlive}`,
+        `- Score: ${summary.sourceSummary.score ?? "NO SCORE"}`,
         `- Morale: ${summary.sourceSummary.morale}`,
         `- Fear: ${summary.sourceSummary.fear}`,
         "",
@@ -596,6 +601,7 @@ function buildSummaryMarkdown(summary) {
         `- Average miles reached: ${summary.overall.averageMilesReached}`,
         `- Average cattle remaining: ${summary.overall.averageCattleRemaining}`,
         `- Average crew alive: ${summary.overall.averageCrewAlive}`,
+        `- Average victory score: ${summary.overall.averageScore ?? "n/a"}`,
         `- Average morale: ${summary.overall.averageMorale}`,
         `- Average fear: ${summary.overall.averageFear}`,
         "",
@@ -673,6 +679,7 @@ async function main() {
         seed: run.seedLabel,
         outcome: run.report.summary.outcome,
         failureCause: run.report.summary.failureCause || "",
+        score: run.report.summary.score ?? "",
         weekEnded: run.report.summary.weekEnded,
         milesReached: run.report.summary.milesReached,
         cattleRemaining: run.report.summary.cattleRemaining,

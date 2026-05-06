@@ -1186,6 +1186,7 @@ function summarizeRuns(runs) {
         weekEnded: [],
         milesReached: [],
         cattleRemaining: [],
+        score: [],
         crewAlive: [],
         crewDead: [],
         crewDeserted: [],
@@ -1290,6 +1291,9 @@ function summarizeRuns(runs) {
         numeric.weekEnded.push(summary.weekEnded);
         numeric.milesReached.push(summary.milesReached);
         numeric.cattleRemaining.push(summary.cattleRemaining);
+        if (typeof summary.score === "number") {
+            numeric.score.push(summary.score);
+        }
         numeric.crewAlive.push(summary.crewAlive);
         numeric.crewDead.push(summary.crewDead);
         numeric.crewDeserted.push(summary.crewDeserted);
@@ -1312,6 +1316,7 @@ function summarizeRuns(runs) {
             averageMilesReached: Number(average(numeric.milesReached).toFixed(2)),
             averageCattleRemaining: Number(average(numeric.cattleRemaining).toFixed(2)),
             medianCattleRemaining: median(numeric.cattleRemaining),
+            averageScore: numeric.score.length > 0 ? Number(average(numeric.score).toFixed(2)) : null,
         },
         variability: {
             weekEnded: spreadStats(numeric.weekEnded),
@@ -1530,6 +1535,7 @@ function buildComparisonRows(policySummaries) {
             averageWeekEnded: summary.overall.averageWeekEnded,
             averageMilesReached: summary.overall.averageMilesReached,
             averageCattleRemaining: summary.overall.averageCattleRemaining,
+            averageScore: summary.overall.averageScore ?? "",
             averageCrewAlive: summary.crew.averageAlive,
             averageCrewDead: summary.crew.averageDead,
             averageCrewDeserted: summary.crew.averageDeserted,
@@ -1623,7 +1629,7 @@ function buildComparisonMarkdown(policySummaries, config) {
         "## Policy Rows",
         "",
         ...rows.map(row =>
-            `- ${row.policy}: week ${row.averageWeekEnded}, miles ${row.averageMilesReached}, cattle ${row.averageCattleRemaining}, morale ${row.averageMorale}, fear ${row.averageFear}, mutiny ${row.mutinyRunRate}% (eligible ${row.mutinyEligibleRunRate}%, avg chance ${row.averageMutinyChance}%), wagon-breaks ${row.wagonBreakRate}%, wagon<50 week ${row.wagon50Week || "never"}, sanctity<50 week ${row.sanctity50Week || "never"}, blight-taken ${row.blightTakenRate}%`
+            `- ${row.policy}: week ${row.averageWeekEnded}, miles ${row.averageMilesReached}, cattle ${row.averageCattleRemaining}, score ${row.averageScore || "n/a"}, morale ${row.averageMorale}, fear ${row.averageFear}, mutiny ${row.mutinyRunRate}% (eligible ${row.mutinyEligibleRunRate}%, avg chance ${row.averageMutinyChance}%), wagon-breaks ${row.wagonBreakRate}%, wagon<50 week ${row.wagon50Week || "never"}, sanctity<50 week ${row.sanctity50Week || "never"}, blight-taken ${row.blightTakenRate}%`
         ),
         "",
         "## Crew Consequences",
@@ -1646,6 +1652,7 @@ function buildPairedSeedRows(policyResults) {
             row[`${run.policyName}_weekEnded`] = summary.weekEnded;
             row[`${run.policyName}_milesReached`] = summary.milesReached;
             row[`${run.policyName}_cattleRemaining`] = summary.cattleRemaining;
+            row[`${run.policyName}_score`] = summary.score ?? "";
             row[`${run.policyName}_wagonCondition`] = summary.wagonCondition;
             row[`${run.policyName}_wagonSanctity`] = summary.wagonSanctity;
             row[`${run.policyName}_morale`] = summary.morale;
@@ -1665,6 +1672,7 @@ function buildPairedSeedRows(policyResults) {
                 ordered[`${policy}_weekEnded`] = row[`${policy}_weekEnded`] ?? "";
                 ordered[`${policy}_milesReached`] = row[`${policy}_milesReached`] ?? "";
                 ordered[`${policy}_cattleRemaining`] = row[`${policy}_cattleRemaining`] ?? "";
+                ordered[`${policy}_score`] = row[`${policy}_score`] ?? "";
                 ordered[`${policy}_wagonCondition`] = row[`${policy}_wagonCondition`] ?? "";
                 ordered[`${policy}_wagonSanctity`] = row[`${policy}_wagonSanctity`] ?? "";
                 ordered[`${policy}_morale`] = row[`${policy}_morale`] ?? "";

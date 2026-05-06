@@ -98,3 +98,62 @@ test('night robbery can steal camp supplies on non-guard nights', async () => {
     Boolean(robberyEvent)
   );
 });
+
+test('victory scoring rewards cattle, crew survival, and thwarted robberies while failures get no score', () => {
+  const strongWin = DeadwoodEngine.calculateVictoryScore({
+    outcome: 'victory',
+    cattleRemaining: 495,
+    cashRemaining: 28,
+    weekEnded: 21,
+    morale: 63,
+    wagonCondition: 38,
+    wagonSanctity: 45,
+    crew: [
+      { alive: true, isLeader: true },
+      { alive: true, isLeader: false },
+      { alive: true, isLeader: false },
+      { alive: true, isLeader: false },
+      { alive: true, isLeader: false },
+    ],
+    thwartedRobberies: 2,
+    perfectHunts: 1,
+  });
+  const slowerWin = DeadwoodEngine.calculateVictoryScore({
+    outcome: 'victory',
+    cattleRemaining: 492,
+    cashRemaining: 3,
+    weekEnded: 24,
+    morale: 46,
+    wagonCondition: 26,
+    wagonSanctity: 0,
+    crew: [
+      { alive: true, isLeader: true },
+      { alive: true, isLeader: false },
+      { alive: false, isLeader: false },
+      { alive: false, isLeader: false },
+      { alive: false, isLeader: false },
+    ],
+    thwartedRobberies: 0,
+    perfectHunts: 0,
+  });
+  const failedRun = DeadwoodEngine.calculateVictoryScore({
+    outcome: 'failure',
+    cattleRemaining: 500,
+    cashRemaining: 90,
+    weekEnded: 19,
+    morale: 80,
+    wagonCondition: 90,
+    wagonSanctity: 90,
+    crew: [
+      { alive: true, isLeader: true },
+      { alive: true, isLeader: false },
+    ],
+    thwartedRobberies: 3,
+    perfectHunts: 2,
+  });
+
+  assert.equal(typeof strongWin, 'number');
+  assert.equal(typeof slowerWin, 'number');
+  assert.ok(strongWin > slowerWin);
+  assert.equal(failedRun, null);
+});
