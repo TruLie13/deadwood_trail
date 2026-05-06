@@ -527,7 +527,7 @@ namespace DeadwoodEngine {
                     "LANDMARK: EL PASO.",
                     "THE SALT BENEATH THE CITY HOLDS THE VEIL BACK.",
                     "THIS IS THE LAST TRUE SAFE ZONE ON THE TRAIL.",
-                    "YOU MAY TRADE HERE BEFORE HEADING WEST AGAIN.",
+                    "A MERCHANT STILL WORKS HERE BEFORE THE WEST TURNS WORSE.",
                 ];
             },
         },
@@ -3277,6 +3277,8 @@ namespace DeadwoodEngine {
         if (state.canTrade) {
             if (state.tradeLocation === "damned-post" && damnedTradesRemaining() <= 0) {
                 await Term.writelns(`${boxLabel("NOTICE")} THE DAMNED POST HAS NO CLEAN DEALS LEFT FOR THIS DRIVE.`);
+            } else if (state.tradeLocation === "el-paso") {
+                await Term.writelns(`${boxLabel("NOTICE")} A MERCHANT IS OPEN HERE. TYPE MERCHANT DURING TRAIL ORDERS.`);
             } else {
                 await Term.writelns(`${boxLabel("NOTICE")} A TRADING OPPORTUNITY IS AVAILABLE HERE. TYPE TRADE DURING TRAIL ORDERS.`);
             }
@@ -3339,6 +3341,14 @@ namespace DeadwoodEngine {
         }
     }
 
+    function activeMarketCommand(): "merchant" | "trade" {
+        return state.tradeLocation === "el-paso" ? "merchant" : "trade";
+    }
+
+    function marketLabel(): string {
+        return state.tradeLocation === "el-paso" ? "MERCHANT" : "MARKET";
+    }
+
     async function printPurchasePrompt(item: NonNullable<GameState["pendingPurchaseItem"]>) {
         await printSection("OUTFITTING", [`HOW MANY ${storeItemLabel(item)} DO YOU WANT TO BUY?`]);
         Term.prompt();
@@ -3351,7 +3361,7 @@ namespace DeadwoodEngine {
         }
         commands.push("repair", "rest", "rations");
         if (state.canTrade) {
-            commands.push("trade");
+            commands.push(activeMarketCommand());
         }
         commands.push("slaughter", "status", "help", "quit");
         return commands;
@@ -3404,17 +3414,18 @@ namespace DeadwoodEngine {
 
     async function printTradePrompt() {
         await Term.writelns("");
-        await Term.writelns(boxLabel("MARKET"));
+        await Term.writelns(boxLabel(marketLabel()));
         if (state.tradeLocation === "el-paso" && state.tradeTime === "day") {
             await Term.writelns(" FOOD       - COST $20, GAIN 30 FOOD");
             await Term.writelns(" AMMO       - COST $16, GAIN 12 AMMO");
-            await Term.writelns(" SUPPLIES   - COST $24, GAIN 8 SUPPLIES");
+            await Term.writelns(" SUPPLIES   - COST $40, GAIN 8 SUPPLIES");
             await Term.writelns(" OIL        - COST $25, GAIN 1 WARDING OIL");
             await Term.writelns(" GRAIN      - COST $20, GAIN 1 BLESSED GRAIN");
         } else if (state.tradeLocation === "el-paso") {
             await Term.writelns(" CHARM      - COST $18, LOWER FEAR AND HERD STRESS");
             await Term.writelns(" VIGIL      - COST $24, GAIN SANCTITY AND WARDING OIL");
             await Term.writelns(" TONIC      - COST $20, STEADY HERD HEALTH AND FATIGUE");
+            await Term.writelns(" SUPPLIES   - COST $32, GAIN 6 SUPPLIES");
             await Term.writelns(" GRAIN      - COST $18, GAIN 1 BLESSED GRAIN");
         } else if (state.tradeTime === "day") {
             if (damnedTradesRemaining() > 0) {
@@ -3433,7 +3444,7 @@ namespace DeadwoodEngine {
                 await Term.writelns(" THE POST HAS SHUT ITS TEETH. NO MORE DEALS WILL COME EASY HERE.");
             }
         }
-        await Term.writelns(" BACK       - LEAVE THE MARKET");
+        await Term.writelns(` BACK       - LEAVE THE ${marketLabel()}`);
         if (state.tradeLocation === "el-paso") {
             await Term.writelns(` CASH ON HAND: $${state.cash}`);
         } else {
@@ -3457,7 +3468,9 @@ namespace DeadwoodEngine {
             "NIGHT     - KEEP MOVING THROUGH THE VEIL",
         ];
         if (state.canTrade) {
-            options.splice(4, 0, "TRADE     - DEAL AFTER DARK FOR STRANGER, MORE IMMEDIATE AID");
+            options.splice(4, 0, state.tradeLocation === "el-paso"
+                ? "MERCHANT  - BUY WHAT THE LAST SAFE CITY WILL STILL SELL YOU"
+                : "TRADE     - DEAL AFTER DARK FOR STRANGER, MORE IMMEDIATE AID");
         }
         await printSection("NIGHT", options);
         Term.prompt();
@@ -4402,7 +4415,9 @@ namespace DeadwoodEngine {
                 lines.splice(1, 0, "HUNT      - REQUIRES AMMO");
             }
             if (state.canTrade) {
-                lines.splice(5, 0, "TRADE     - ENTER THE MARKET WHEN A SAFE OR STRANGE POST IS OPEN");
+                lines.splice(5, 0, state.tradeLocation === "el-paso"
+                    ? "MERCHANT  - BUY FROM THE LAST CLEAN SELLER BEFORE THE DEEP WEST"
+                    : "TRADE     - ENTER THE MARKET WHEN A SAFE OR STRANGE POST IS OPEN");
             }
         } else if (state.phase === "repair") {
             lines = [
@@ -4413,8 +4428,8 @@ namespace DeadwoodEngine {
             ];
         } else if (state.phase === "trade") {
             lines = [
-                "TYPE AN OFFER NAME TO TRADE FOR IT",
-                "BACK      - LEAVE THE MARKET",
+                `TYPE AN OFFER NAME TO DEAL WITH THE ${marketLabel()}`,
+                `BACK      - LEAVE THE ${marketLabel()}`,
             ];
         } else if (state.phase === "rations") {
             lines = [
@@ -4431,6 +4446,11 @@ namespace DeadwoodEngine {
                 "RITE      - TRADE COMFORT FOR SUPERNATURAL CLARITY",
                 "NIGHT     - NIGHT DRIVE FOR DISTANCE AND DANGER",
             ];
+            if (state.canTrade) {
+                lines.splice(4, 0, state.tradeLocation === "el-paso"
+                    ? "MERCHANT  - BUY WHAT THE LAST SAFE CITY WILL STILL SELL YOU"
+                    : "TRADE     - DEAL AFTER DARK FOR STRANGER, MORE IMMEDIATE AID");
+            }
         } else if (state.phase === "chest") {
             lines = [
                 "OPEN      - TAKE THE REWARD AND THE CURSE",
@@ -4730,15 +4750,15 @@ namespace DeadwoodEngine {
             return;
         }
 
-        if (input === "trade") {
+        if (input === "trade" || input === "merchant") {
             if (currentRunReport) {
                 currentRunReport.counters.dayActions.trade += 1;
             }
-            recordAction("day", "trade-entry", state.tradeLocation);
+            recordAction("day", state.tradeLocation === "el-paso" ? "merchant-entry" : "trade-entry", state.tradeLocation);
             state.lastDayAction = "trade";
             state.occultHuntBonus = false;
             if (!state.canTrade) {
-                await Term.writelns("THERE IS NOWHERE TO TRADE HERE. YOU ARE STILL OUT ON THE TRAIL.");
+                await Term.writelns("THERE IS NO MARKET OPEN TO YOU HERE. YOU ARE STILL OUT ON THE TRAIL.");
                 await printDayPrompt();
                 return;
             }
@@ -4819,7 +4839,7 @@ namespace DeadwoodEngine {
     async function enterTrade() {
         state.tradeTime = state.phase === "night" ? "night" : "day";
         if (!state.canTrade) {
-            await Term.writelns("THERE IS NO MARKET OPEN TO YOU HERE YET. THE FIRST CLEAR SAFE-ZONE TRADE IS IN EL PASO.");
+            await Term.writelns("THERE IS NO MERCHANT OR MARKET OPEN TO YOU HERE YET. THE FIRST CLEAR SAFE-ZONE SELLER IS IN EL PASO.");
             if (state.tradeTime === "night") {
                 await printNightPrompt();
             } else {
@@ -4841,7 +4861,7 @@ namespace DeadwoodEngine {
         } else if (state.tradeLocation === "el-paso") {
             await Term.writelns(state.tradeTime === "night"
                 ? "EL PASO CHANGES AFTER DARK. CANDLES BURN LOW, AND THE OFFERS TURN QUIETER AND STRANGER."
-                : "EL PASO OFFERS A CLEANER MARKET THAN ANYWHERE ELSE LEFT ON THE TRAIL.");
+                : "EL PASO OFFERS THE LAST CLEAN MERCHANT LEFT ON THE TRAIL.");
         } else {
             await Term.writelns("A MAKESHIFT MARKET STIRS HERE, BUT IT DOES NOT FEEL LIKE A PLACE THAT WANTS TO BE FOUND TWICE.");
         }
@@ -4850,9 +4870,10 @@ namespace DeadwoodEngine {
 
     async function handleTradeCommand(input: string) {
         if (input === "back") {
+            const label = marketLabel();
             state.canTrade = false;
             state.tradeLocation = "none";
-            await Term.writelns("YOU LEAVE THE MARKET AND RETURN TO THE WAGON.");
+            await Term.writelns(`YOU LEAVE THE ${label} AND RETURN TO THE WAGON.`);
             if (state.tradeTime === "night") {
                 state.phase = "night";
                 await printNightPrompt();
@@ -4880,12 +4901,12 @@ namespace DeadwoodEngine {
                 state.cash -= 16;
                 state.ammo += 12;
             } else if (state.tradeTime === "day" && input === "supplies") {
-                if (state.cash < 24) {
-                    await Term.writelns("YOU DO NOT HAVE $24 FOR THAT TRADE.");
+                if (state.cash < 40) {
+                    await Term.writelns("YOU DO NOT HAVE $40 FOR THAT TRADE.");
                     await printTradePrompt();
                     return;
                 }
-                state.cash -= 24;
+                state.cash -= 40;
                 state.supplies += 8;
             } else if (state.tradeTime === "day" && input === "oil") {
                 if (state.cash < 25) {
@@ -4930,6 +4951,14 @@ namespace DeadwoodEngine {
                 }
                 state.cash -= 20;
                 affectHerd({ health: 8, fatigue: -8 });
+            } else if (state.tradeTime === "night" && input === "supplies") {
+                if (state.cash < 32) {
+                    await Term.writelns("YOU DO NOT HAVE $32 FOR THAT TRADE.");
+                    await printTradePrompt();
+                    return;
+                }
+                state.cash -= 32;
+                state.supplies += 6;
             } else if (state.tradeTime === "night" && (input === "grain" || input === "blessed grain")) {
                 if (state.cash < 18) {
                     await Term.writelns("YOU DO NOT HAVE $18 FOR THAT TRADE.");
@@ -4946,7 +4975,7 @@ namespace DeadwoodEngine {
 
             affectCrew({ morale: 2 });
             recordAction("trade", input, `${state.tradeLocation}:${state.tradeTime}`);
-            await Term.writelns(`EL PASO DEAL CLOSED: ${input.toUpperCase()} SECURED.`);
+            await Term.writelns(`EL PASO MERCHANT DEAL CLOSED: ${input.toUpperCase()} SECURED.`);
             await printStatus();
             await printTradePrompt();
             return;
@@ -5322,15 +5351,15 @@ namespace DeadwoodEngine {
             return;
         }
 
-        if (input === "trade") {
+        if (input === "trade" || input === "merchant") {
             if (currentRunReport) {
                 currentRunReport.counters.nightActions.trade += 1;
             }
-            recordAction("night", "trade-entry", state.tradeLocation);
+            recordAction("night", state.tradeLocation === "el-paso" ? "merchant-entry" : "trade-entry", state.tradeLocation);
             state.lastDayAction = "trade";
             state.lastNightAction = "trade";
             if (!state.canTrade) {
-                await Term.writelns("THERE IS NOWHERE TO TRADE HERE TONIGHT.");
+                await Term.writelns("THERE IS NO MARKET OPEN TO YOU HERE TONIGHT.");
                 await printNightPrompt();
                 return;
             }
@@ -6278,7 +6307,7 @@ namespace DeadwoodEngine {
             if (state.tradeLocation === "el-paso") {
                 return state.tradeTime === "day"
                     ? ["food", "ammo", "supplies", "oil", "grain", "blessed grain", "warding oil", "back", "status", "help", "quit"]
-                    : ["charm", "vigil", "tonic", "grain", "blessed grain", "back", "status", "help", "quit"];
+                    : ["charm", "vigil", "tonic", "supplies", "grain", "blessed grain", "back", "status", "help", "quit"];
             }
             return state.tradeTime === "day"
                 ? ["oil", "mirror", "nails", "back", "status", "help", "quit"]
@@ -6292,7 +6321,7 @@ namespace DeadwoodEngine {
         if (state.phase === "night") {
             const options = ["campfire", "guard", "whiskey", "rite", "night", "status", "help", "quit"];
             if (state.canTrade) {
-                options.splice(4, 0, "trade");
+                options.splice(4, 0, activeMarketCommand());
             }
             return options;
         }
