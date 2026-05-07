@@ -264,6 +264,568 @@ body {
     }
 }
 
+.deadwood-launcher,
+.deadwood-gui {
+    position: fixed;
+    inset: 0;
+}
+
+.deadwood-launcher {
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top, rgba(138, 104, 54, 0.24), transparent 38%),
+        linear-gradient(180deg, rgba(17, 13, 11, 0.2), rgba(17, 13, 11, 0.94)),
+        linear-gradient(135deg, #18110d, #241711 42%, #121517);
+}
+
+.deadwood-launcher[hidden] {
+    display: none;
+}
+
+.deadwood-launcher-panel {
+    width: min(620px, 100%);
+    padding: 28px 28px 24px;
+    border: 4px solid #f3e3bb;
+    background:
+        linear-gradient(180deg, rgba(29, 19, 15, 0.97), rgba(13, 10, 8, 0.97)),
+        #1b120e;
+    color: #f8f1da;
+    box-shadow: 0 18px 80px rgba(0, 0, 0, 0.55);
+}
+
+.deadwood-launcher-kicker,
+.deadwood-launcher-note,
+.deadwood-gui-banner-label,
+.deadwood-gui-panel-title,
+.deadwood-gui-card-role,
+.deadwood-gui-card-status,
+.deadwood-gui-summary-grid span,
+.deadwood-gui-stat-block span,
+.deadwood-gui-items span,
+.deadwood-gui-command-hint,
+.deadwood-gui-alert-kind {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.deadwood-launcher-title {
+    margin: 12px 0 10px;
+    font-size: clamp(34px, 6vw, 56px);
+    line-height: 0.95;
+}
+
+.deadwood-launcher-copy,
+.deadwood-launcher-note {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.35;
+}
+
+.deadwood-launcher-actions {
+    display: flex;
+    gap: 14px;
+    margin: 22px 0 18px;
+}
+
+.deadwood-launcher-actions button,
+.deadwood-command-form button,
+.deadwood-gui-command-buttons button {
+    border: 3px solid #f3e3bb;
+    background: #111;
+    color: #f8f1da;
+    font: inherit;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.deadwood-launcher-actions button {
+    flex: 1;
+    min-height: 54px;
+}
+
+.deadwood-launcher-note span {
+    color: #9fda65;
+}
+
+.deadwood-gui {
+    z-index: 40;
+    display: none;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 16px;
+    background:
+        radial-gradient(circle at top, rgba(87, 129, 184, 0.14), transparent 30%),
+        linear-gradient(180deg, #0f1217, #15110d 36%, #1c140e 100%);
+    color: #f4eed8;
+}
+
+body.deadwood-mode-gui .deadwood-gui {
+    display: grid;
+}
+
+body.deadwood-mode-gui #terminal {
+    display: none !important;
+}
+
+body.deadwood-mode-gui .simple-keyboard {
+    display: none !important;
+}
+
+.deadwood-gui-stage-shell,
+.deadwood-gui-stage,
+.deadwood-gui-dock {
+    min-height: 0;
+}
+
+.deadwood-gui-stage-shell {
+    position: relative;
+}
+
+.deadwood-gui-stage {
+    position: relative;
+    height: 100%;
+}
+
+.deadwood-gui-canvas,
+.deadwood-gui-panel,
+.deadwood-gui-hud-card,
+.deadwood-gui-event-ribbon {
+    border: 4px solid #f3e3bb;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+}
+
+.deadwood-gui-canvas {
+    position: relative;
+    min-height: 360px;
+    overflow: hidden;
+    background: linear-gradient(180deg, #7db7d8 0%, #d4d6c2 48%, #619f12 48%, #619f12 100%);
+}
+
+.deadwood-gui-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.deadwood-gui-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: 14px;
+    pointer-events: none;
+}
+
+.deadwood-gui-topbar {
+    display: grid;
+    grid-template-columns: 1.1fr 1.05fr 0.9fr 1.2fr;
+    gap: 10px;
+    align-items: start;
+    pointer-events: none;
+}
+
+.deadwood-gui-panel-title {
+    color: #9fda65;
+    font-size: 13px;
+}
+
+.deadwood-gui-hud-card,
+.deadwood-gui-panel,
+.deadwood-gui-event-ribbon,
+.deadwood-gui-card {
+    background: rgba(17, 16, 15, 0.84);
+    backdrop-filter: blur(5px);
+}
+
+.deadwood-gui-hud-card,
+.deadwood-gui-panel {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+}
+
+.deadwood-gui-hud-card-primary {
+    min-width: 0;
+}
+
+.deadwood-gui-summary-grid,
+.deadwood-gui-stat-block {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+}
+
+.deadwood-gui-summary-wide {
+    grid-column: 1 / -1;
+}
+
+.deadwood-gui-summary-grid div,
+.deadwood-gui-stat-block div {
+    display: grid;
+    gap: 4px;
+}
+
+.deadwood-gui-summary-grid strong,
+.deadwood-gui-stat-block strong {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.deadwood-gui-stat-block-tight {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.deadwood-gui-stat-block-tight strong {
+    font-size: 16px;
+}
+
+.deadwood-meter-group {
+    display: grid;
+    gap: 8px;
+}
+
+.deadwood-meter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.deadwood-meter {
+    height: 16px;
+    border: 2px solid #f3e3bb;
+    background: #2c261f;
+    overflow: hidden;
+}
+
+.deadwood-meter div {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #8ac440, #d7ec89);
+    transition: width 260ms ease;
+}
+
+.deadwood-meter-warning div {
+    background: linear-gradient(90deg, #d28a3d, #f1cf6d);
+}
+
+.deadwood-meter-danger div {
+    background: linear-gradient(90deg, #8f3522, #d26a4f);
+}
+
+.deadwood-gui-items {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+}
+
+.deadwood-gui-items div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid rgba(243, 227, 187, 0.14);
+}
+
+.deadwood-gui-items strong {
+    font-size: 16px;
+}
+
+.deadwood-gui-event-ribbon {
+    align-self: end;
+    justify-self: center;
+    width: min(760px, calc(100% - 140px));
+    display: grid;
+    gap: 10px;
+    padding: 10px 16px;
+    pointer-events: none;
+}
+
+.deadwood-gui-banner-label {
+    color: #9fda65;
+    font-size: 11px;
+}
+
+.deadwood-gui-banner-text {
+    color: #f8f1da;
+    font-size: 22px;
+    line-height: 1.08;
+}
+
+.deadwood-gui-crew-strip {
+    align-self: end;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    pointer-events: none;
+}
+
+.deadwood-gui-card {
+    display: grid;
+    gap: 6px;
+    padding: 10px;
+    border: 2px solid rgba(243, 227, 187, 0.4);
+}
+
+.deadwood-gui-card-header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.deadwood-gui-card-name {
+    font-size: 18px;
+    line-height: 0.95;
+}
+
+.deadwood-gui-card-role,
+.deadwood-gui-card-status {
+    font-size: 12px;
+}
+
+.deadwood-gui-card-status.tone-steady {
+    color: #a8dc72;
+}
+
+.deadwood-gui-card-status.tone-worn {
+    color: #e7cb7f;
+}
+
+.deadwood-gui-card-status.tone-shaken {
+    color: #f39c65;
+}
+
+.deadwood-gui-card-status.tone-breaking,
+.deadwood-gui-card-status.tone-gone {
+    color: #d55f54;
+}
+
+.deadwood-gui-card-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 8px;
+}
+
+.deadwood-gui-card-metrics div {
+    display: grid;
+    gap: 3px;
+}
+
+.deadwood-gui-card-metrics strong {
+    font-size: 15px;
+}
+
+.deadwood-gui-toast-stack {
+    justify-self: end;
+    align-self: start;
+    width: min(360px, 34vw);
+    display: grid;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.deadwood-gui-alert {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 3px solid rgba(243, 227, 187, 0.45);
+    border-left-width: 8px;
+    background: rgba(25, 17, 13, 0.9);
+    color: #f7edd2;
+    transform: translateY(0);
+    animation: deadwood-toast-in 180ms ease;
+}
+
+.deadwood-gui-alert.kind-warning {
+    border-left-color: #d55f54;
+}
+
+.deadwood-gui-alert.kind-notice {
+    border-left-color: #8ac440;
+}
+
+@keyframes deadwood-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.deadwood-gui-dock {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(380px, 0.9fr);
+    gap: 12px;
+}
+
+.deadwood-gui-report-panel,
+.deadwood-gui-command-panel {
+    align-content: start;
+}
+
+.deadwood-gui-report-log {
+    display: grid;
+    gap: 7px;
+    min-height: 156px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(243, 227, 187, 0.4) rgba(24, 20, 17, 0.65);
+}
+
+.deadwood-gui-report-line {
+    padding: 8px 10px;
+    border-left: 4px solid rgba(159, 218, 101, 0.45);
+    background: rgba(33, 31, 28, 0.76);
+    line-height: 1.25;
+}
+
+.deadwood-gui-report-log::-webkit-scrollbar {
+    width: 8px;
+}
+
+.deadwood-gui-report-log::-webkit-scrollbar-track {
+    background: rgba(24, 20, 17, 0.65);
+}
+
+.deadwood-gui-report-log::-webkit-scrollbar-thumb {
+    background: rgba(243, 227, 187, 0.4);
+}
+
+.deadwood-command-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.deadwood-command-form input {
+    min-width: 0;
+    min-height: 44px;
+    border: 3px solid #f3e3bb;
+    background: #0d0d0d;
+    color: #f8f1da;
+    font: inherit;
+    padding: 0 12px;
+    text-transform: uppercase;
+}
+
+.deadwood-command-form button,
+.deadwood-gui-command-buttons button {
+    min-height: 44px;
+    padding: 0 14px;
+}
+
+.deadwood-gui-command-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.deadwood-gui-mode-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.deadwood-gui-command-buttons button.is-meta {
+    border-color: rgba(243, 227, 187, 0.45);
+    color: rgba(248, 241, 218, 0.86);
+}
+
+body.deadwood-mode-shell #terminal {
+    display: block !important;
+}
+
+body.deadwood-mode-shell .deadwood-launcher,
+body.deadwood-mode-gui .deadwood-launcher {
+    display: none;
+}
+
+@media (max-width: 1100px) {
+    .deadwood-gui {
+        grid-template-rows: minmax(320px, 1fr) auto;
+    }
+
+    .deadwood-gui-topbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .deadwood-gui-crew-strip {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .deadwood-gui-dock {
+        grid-template-columns: 1fr;
+    }
+
+    .deadwood-gui-toast-stack {
+        width: min(360px, calc(100% - 28px));
+    }
+}
+
+@media (max-width: 720px) {
+    .deadwood-launcher {
+        padding: 14px;
+    }
+
+    .deadwood-launcher-actions {
+        flex-direction: column;
+    }
+
+    .deadwood-gui {
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .deadwood-gui-overlay {
+        padding: 8px;
+    }
+
+    .deadwood-gui-topbar {
+        grid-template-columns: 1fr;
+    }
+
+    .deadwood-gui-banner-text {
+        font-size: 18px;
+    }
+
+    .deadwood-gui-event-ribbon {
+        width: calc(100% - 16px);
+    }
+
+    .deadwood-gui-crew-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .deadwood-gui-card-metrics,
+    .deadwood-gui-items,
+    .deadwood-gui-command-buttons,
+    .deadwood-gui-summary-grid,
+    .deadwood-gui-stat-block {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .deadwood-gui-stat-block-tight {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .deadwood-gui-command-buttons,
+    .deadwood-gui-mode-buttons {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 #deadwood-debug-overlay {
     position: fixed;
     right: 12px;

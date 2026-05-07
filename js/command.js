@@ -120,7 +120,9 @@ const Command = (() => {
     async function help() {
         const commands = {
             "RUN DEADWOOD": "RUN DEADWOOD TRAIL",
+            "RUN DEADWOOD GUI": "RUN DEADWOOD TRAIL IN THE NEW GRAPHICAL MODE",
             "TEST DEADWOOD": "RUN DEV MODE WITH PER-RUN REPORT OUTPUT",
+            "TEST DEADWOOD GUI": "RUN DEV MODE IN GRAPHICAL MODE",
             "EXIT": "EXIT FROM THE GAME",
             "CLEAR": "CLEAR THE TERMINAL SCREEN",
             "CRT": "ENABLE / DISABLE CRT EFFECT",
@@ -194,7 +196,9 @@ const Command = (() => {
         const normalized = input.toLowerCase();
         const commands = [
             "run deadwood",
+            "run deadwood gui",
             "test deadwood",
+            "test deadwood gui",
             "clear",
             "crt",
             "help",
@@ -206,7 +210,23 @@ const Command = (() => {
             "set color",
         ];
 
+        const exactMatch = commands.find(cmd => cmd === normalized);
+        if (exactMatch) {
+            return exactMatch.toUpperCase();
+        }
+
         const matches = commands.filter(cmd => cmd.startsWith(normalized));
+        if (matches.length === 1) {
+            return matches[0].toUpperCase();
+        }
+
+        if (matches.length > 1) {
+            const shortest = [...matches].sort((left, right) => left.length - right.length)[0];
+            if (matches.every(cmd => cmd.startsWith(shortest))) {
+                return shortest.toUpperCase();
+            }
+        }
+
         if (matches.length !== 1) {
             return null;
         }
@@ -224,18 +244,50 @@ const Command = (() => {
         if (cmd == "run deadwood") {
             App.cmdrun = false;
             if (window.DeadwoodGame) {
-                window.DeadwoodGame.start();
+                if (App.deadwoodGui?.launchMode) {
+                    App.deadwoodGui.launchMode("shell");
+                } else {
+                    window.DeadwoodGame.start();
+                }
             } else {
                 await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
+                Term.prompt();
+            }
+            return;
+        } else if (cmd == "run deadwood gui") {
+            App.cmdrun = false;
+            if (window.DeadwoodGame && App.deadwoodGui?.launchMode) {
+                App.deadwoodGui.launchMode("gui");
+            } else if (!window.DeadwoodGame) {
+                await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
+                Term.prompt();
+            } else {
+                await Term.writelns(" ERROR: GUI MODE FAILED TO LOAD");
                 Term.prompt();
             }
             return;
         } else if (cmd == "test deadwood") {
             App.cmdrun = false;
             if (window.DeadwoodGame) {
-                window.DeadwoodGame.start({ debugMode: true });
+                if (App.deadwoodGui?.launchMode) {
+                    App.deadwoodGui.launchMode("shell", { debugMode: true });
+                } else {
+                    window.DeadwoodGame.start({ debugMode: true });
+                }
             } else {
                 await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
+                Term.prompt();
+            }
+            return;
+        } else if (cmd == "test deadwood gui") {
+            App.cmdrun = false;
+            if (window.DeadwoodGame && App.deadwoodGui?.launchMode) {
+                App.deadwoodGui.launchMode("gui", { debugMode: true });
+            } else if (!window.DeadwoodGame) {
+                await Term.writelns(" ERROR: DEADWOOD TRAIL FAILED TO LOAD");
+                Term.prompt();
+            } else {
+                await Term.writelns(" ERROR: GUI MODE FAILED TO LOAD");
                 Term.prompt();
             }
             return;

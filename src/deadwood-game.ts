@@ -132,9 +132,84 @@ type StatusSnapshot = Pick<
     "herdHealth" | "herdStress" | "herdFatigue" | "herdBlight"
 >;
 
+type DeadwoodRenderMode = "shell" | "gui";
+
 type DeadwoodStartOptions = {
     debugMode?: boolean;
     runMode?: DeadwoodRunMode;
+    renderMode?: DeadwoodRenderMode;
+};
+
+type DeadwoodUiAlert = {
+    kind: "warning" | "notice";
+    text: string;
+};
+
+type DeadwoodGuiCrewCard = {
+    id: number;
+    name: string;
+    role: CrewRole;
+    alive: boolean;
+    isLeader: boolean;
+    statusLabel: string;
+    statusTone: "steady" | "worn" | "shaken" | "breaking" | "gone";
+    health: number;
+    morale: number;
+    fear: number;
+    hunger: number;
+};
+
+type DeadwoodGuiSnapshot = {
+    active: boolean;
+    phase: Phase;
+    runMode: DeadwoodRunMode;
+    renderMode: DeadwoodRenderMode;
+    location: {
+        current: string;
+        next: string | null;
+        milesToNext: number | null;
+        progressPercent: number;
+    };
+    trail: {
+        week: number;
+        miles: number;
+        destinationMiles: number;
+        reachedLandmarks: string[];
+        rationLevel: RationLevel;
+    };
+    items: {
+        food: number;
+        blightedFood: number;
+        ammo: number;
+        supplies: number;
+        cash: number;
+        whiskey: number;
+        blessedGrain: number;
+        wardingOil: number;
+    };
+    crew: {
+        morale: number;
+        fear: number;
+        fearLabel: string;
+        mutinyPressure: number;
+        mutinyChance: number;
+        cards: DeadwoodGuiCrewCard[];
+    };
+    cattle: {
+        amount: number;
+        health: number;
+        stress: number;
+        stressLabel: string;
+        fatigue: number;
+        blight: number;
+        conditionLabel: string;
+    };
+    wagon: {
+        structure: number;
+        sanctity: number;
+    };
+    alerts: DeadwoodUiAlert[];
+    availableCommands: string[];
 };
 
 type DeadwoodGameApi = {
@@ -173,6 +248,15 @@ type SpecialistPassiveStatus = {
 
 type WindowWithDeadwoodGame = Window & {
     DeadwoodGame?: DeadwoodGameApi;
+    DeadwoodUiBridge?: {
+        clearOutput?: () => void;
+        pushLine?: (line: string) => void;
+        setPromptState?: (visible: boolean) => void;
+    };
+    DeadwoodTrailUi?: {
+        renderMode: DeadwoodRenderMode;
+        snapshot: DeadwoodGuiSnapshot;
+    };
     DeadwoodTrailReports?: {
         currentRun: DeadwoodRunReport | null;
         lastCompletedRun: DeadwoodRunReport | null;
@@ -445,6 +529,7 @@ type DeadwoodRunReport = {
 
 type DeadwoodEngineApi = DeadwoodGameApi & {
     getStateSnapshot: () => GameState;
+    getUiSnapshot: () => DeadwoodGuiSnapshot;
     getRunReport: () => DeadwoodRunReport | null;
     getAvailableCommands: () => string[];
     getSeed: () => number | string | null;
@@ -621,6 +706,7 @@ namespace DeadwoodEngine {
     let lastStatusSnapshot: StatusSnapshot | null = null;
     let debugMode = false;
     let runMode: DeadwoodRunMode = "normal";
+    let renderMode: DeadwoodRenderMode = "shell";
     let debugOverlayEl: HTMLDivElement | null = null;
     const debugCardOpenState: Record<string, boolean> = {};
     let specialistPassiveStatus = createInitialSpecialistPassiveStatus();
@@ -666,6 +752,42 @@ namespace DeadwoodEngine {
             foodReceivedTotal: Number(member.foodReceivedTotal.toFixed(2)),
             whiskeyReceivedTotal: member.whiskeyReceivedTotal,
         };
+    }
+
+    function nextLandmark(): Landmark | null {
+        for (const landmark of LANDMARKS) {
+            if (state.miles < landmark.mile) {
+                return landmark;
+            }
+        }
+
+        return null;
+    }
+
+    function crewCardStatus(member: CrewMember): { label: DeadwoodGuiCrewCard["statusLabel"]; tone: DeadwoodGuiCrewCard["statusTone"] } {
+        if (!member.alive) {
+            return { label: "Gone", tone: "gone" };
+        }
+
+        const pressure =
+            Math.max(0, 55 - member.health) +
+            Math.max(0, member.fear - 45) +
+            Math.max(0, member.hunger - 50) +
+            Math.max(0, 55 - member.morale);
+
+        if (pressure >= 95 || member.health <= 30 || member.fear >= 85 || member.hunger >= 85 || member.morale <= 20) {
+            return { label: "Breaking", tone: "breaking" };
+        }
+
+        if (pressure >= 65 || member.health <= 45 || member.fear >= 65 || member.hunger >= 70 || member.morale <= 35) {
+            return { label: "Shaken", tone: "shaken" };
+        }
+
+        if (pressure >= 35 || member.health <= 60 || member.fear >= 45 || member.hunger >= 55 || member.morale <= 50) {
+            return { label: "Worn", tone: "worn" };
+        }
+
+        return { label: "Steady", tone: "steady" };
     }
 
     function createSpecialistCounterMap() {
@@ -1516,6 +1638,8 @@ namespace DeadwoodEngine {
     }
 
     function syncDebugOverlay() {
+        publishUiState();
+
         if (!hasDom) {
             return;
         }
@@ -3193,6 +3317,66 @@ namespace DeadwoodEngine {
         return "FAILING";
     }
 
+    function statusAlerts(): DeadwoodUiAlert[] {
+        const alerts: DeadwoodUiAlert[] = [];
+
+        if (state.phase === "outfit") {
+            return alerts;
+        }
+
+        if (state.wagonCondition <= 20) {
+            alerts.push({ kind: "warning", text: "WAGON CONDITION IS CRITICAL. ANOTHER HARD HIT COULD BREAK THE FRAME." });
+        } else if (state.wagonCondition <= 40) {
+            alerts.push({ kind: "warning", text: "WAGON CONDITION IS LOW. PHYSICAL REPAIRS ARE STRONGLY ADVISED." });
+        }
+
+        if (state.wagonSanctity <= 0) {
+            alerts.push({ kind: "warning", text: "WAGON SANCTITY IS GONE. THE WARD HAS FAILED, AND FEAR AND NIGHT THREATS NOW HIT HARDER." });
+        } else if (state.wagonSanctity <= 15) {
+            alerts.push({ kind: "warning", text: "WAGON SANCTITY IS CRITICAL. THE VEIL IS ALMOST THROUGH." });
+        } else if (state.wagonSanctity <= 30) {
+            alerts.push({ kind: "warning", text: "WAGON SANCTITY IS LOW. THE CREW FEELS EXPOSED TO THE DARK." });
+        }
+
+        if (state.fear >= 70) {
+            alerts.push({ kind: "warning", text: "FEAR IS HIGH ENOUGH TO TRIGGER A SERIOUS STAMPEDE." });
+        }
+
+        if (state.mutinyPressure >= 85) {
+            alerts.push({ kind: "warning", text: "MUTINY PRESSURE IS CRITICAL. THE CREW'S FAITH IN THE LEADER IS NEAR BREAKING." });
+        } else if (state.mutinyPressure >= 60) {
+            alerts.push({ kind: "warning", text: "MUTINY PRESSURE IS HIGH. HUNGER, RESENTMENT, AND BAD LEADERSHIP ARE STARTING TO COMPOUND." });
+        }
+
+        if (state.herdStress >= 70) {
+            alerts.push({ kind: "warning", text: "HERD STRESS IS CRITICAL. A BAD CALL COULD COST CATTLE FAST." });
+        }
+
+        if (state.herdHealth <= 30) {
+            alerts.push({ kind: "warning", text: "HERD HEALTH IS FAILING. LOSSES WILL START COMPOUNDING." });
+        }
+
+        if (state.canTrade) {
+            if (state.tradeLocation === "damned-post" && damnedTradesRemaining() <= 0) {
+                alerts.push({ kind: "notice", text: "THE DAMNED POST HAS NO CLEAN DEALS LEFT FOR THIS DRIVE." });
+            } else if (state.tradeLocation === "el-paso") {
+                alerts.push({ kind: "notice", text: "A MERCHANT IS OPEN HERE. TYPE MERCHANT DURING TRAIL ORDERS." });
+            } else {
+                alerts.push({ kind: "notice", text: "A TRADING OPPORTUNITY IS AVAILABLE HERE. TYPE TRADE DURING TRAIL ORDERS." });
+            }
+        }
+
+        for (const warning of herdWarningMessages()) {
+            alerts.push({ kind: "notice", text: warning });
+        }
+
+        for (const warning of crewWarningMessages()) {
+            alerts.push({ kind: "notice", text: warning });
+        }
+
+        return alerts;
+    }
+
     function snapshotStatus(): StatusSnapshot {
         return {
             week: state.week,
@@ -3230,6 +3414,93 @@ namespace DeadwoodEngine {
         }
 
         return delta > 0 ? ` (+${delta})` : ` (${delta})`;
+    }
+
+    function createGuiSnapshot(): DeadwoodGuiSnapshot {
+        const next = nextLandmark();
+
+        return {
+            active: state.active,
+            phase: state.phase,
+            runMode,
+            renderMode,
+            location: {
+                current: locationName(),
+                next: next ? next.name.toUpperCase() : null,
+                milesToNext: next ? Math.max(0, next.mile - state.miles) : null,
+                progressPercent: Math.round((Math.min(state.miles, state.destinationMiles) / state.destinationMiles) * 100),
+            },
+            trail: {
+                week: state.week,
+                miles: state.miles,
+                destinationMiles: state.destinationMiles,
+                reachedLandmarks: [...state.reachedLandmarks],
+                rationLevel: state.rationLevel,
+            },
+            items: {
+                food: state.food,
+                blightedFood: state.blightedFood,
+                ammo: state.ammo,
+                supplies: state.supplies,
+                cash: state.cash,
+                whiskey: state.whiskey,
+                blessedGrain: state.blessedGrain,
+                wardingOil: state.wardingOil,
+            },
+            crew: {
+                morale: state.morale,
+                fear: state.fear,
+                fearLabel: fearLabel(),
+                mutinyPressure: state.mutinyPressure,
+                mutinyChance: state.mutinyChance,
+                cards: state.crew.map(member => {
+                    const status = crewCardStatus(member);
+                    return {
+                        id: member.id,
+                        name: member.name,
+                        role: member.role,
+                        alive: member.alive,
+                        isLeader: member.isLeader,
+                        statusLabel: status.label,
+                        statusTone: status.tone,
+                        health: member.health,
+                        morale: member.morale,
+                        fear: member.fear,
+                        hunger: member.hunger,
+                    };
+                }),
+            },
+            cattle: {
+                amount: state.cattle,
+                health: state.herdHealth,
+                stress: state.herdStress,
+                stressLabel: herdStressLabel(),
+                fatigue: state.herdFatigue,
+                blight: state.herdBlight,
+                conditionLabel: herdConditionLabel(),
+            },
+            wagon: {
+                structure: state.wagonCondition,
+                sanctity: state.wagonSanctity,
+            },
+            alerts: statusAlerts(),
+            availableCommands: [...getAutocompleteOptions()],
+        };
+    }
+
+    function publishUiState() {
+        root.DeadwoodTrailUi = {
+            renderMode,
+            snapshot: createGuiSnapshot(),
+        };
+
+        if (!hasDom || typeof CustomEvent === "undefined") {
+            return;
+        }
+
+        window.dispatchEvent(new CustomEvent("deadwood:ui-snapshot", {
+            detail: root.DeadwoodTrailUi.snapshot,
+        }));
     }
 
     function statusLines(): string[] {
@@ -3293,58 +3564,8 @@ namespace DeadwoodEngine {
     }
 
     async function printStatusWarnings() {
-        if (state.phase === "outfit") {
-            return;
-        }
-
-        if (state.wagonCondition <= 20) {
-            await Term.writelns(`${boxLabel("WARNING")} WAGON CONDITION IS CRITICAL. ANOTHER HARD HIT COULD BREAK THE FRAME.`);
-        } else if (state.wagonCondition <= 40) {
-            await Term.writelns(`${boxLabel("WARNING")} WAGON CONDITION IS LOW. PHYSICAL REPAIRS ARE STRONGLY ADVISED.`);
-        }
-
-        if (state.wagonSanctity <= 0) {
-            await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS GONE. THE WARD HAS FAILED, AND FEAR AND NIGHT THREATS NOW HIT HARDER.`);
-        } else if (state.wagonSanctity <= 15) {
-            await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS CRITICAL. THE VEIL IS ALMOST THROUGH.`);
-        } else if (state.wagonSanctity <= 30) {
-            await Term.writelns(`${boxLabel("WARNING")} WAGON SANCTITY IS LOW. THE CREW FEELS EXPOSED TO THE DARK.`);
-        }
-
-        if (state.fear >= 70) {
-            await Term.writelns(`${boxLabel("WARNING")} FEAR IS HIGH ENOUGH TO TRIGGER A SERIOUS STAMPEDE.`);
-        }
-
-        if (state.mutinyPressure >= 85) {
-            await Term.writelns(`${boxLabel("WARNING")} MUTINY PRESSURE IS CRITICAL. THE CREW'S FAITH IN THE LEADER IS NEAR BREAKING.`);
-        } else if (state.mutinyPressure >= 60) {
-            await Term.writelns(`${boxLabel("WARNING")} MUTINY PRESSURE IS HIGH. HUNGER, RESENTMENT, AND BAD LEADERSHIP ARE STARTING TO COMPOUND.`);
-        }
-
-        if (state.herdStress >= 70) {
-            await Term.writelns(`${boxLabel("WARNING")} HERD STRESS IS CRITICAL. A BAD CALL COULD COST CATTLE FAST.`);
-        }
-
-        if (state.herdHealth <= 30) {
-            await Term.writelns(`${boxLabel("WARNING")} HERD HEALTH IS FAILING. LOSSES WILL START COMPOUNDING.`);
-        }
-
-        if (state.canTrade) {
-            if (state.tradeLocation === "damned-post" && damnedTradesRemaining() <= 0) {
-                await Term.writelns(`${boxLabel("NOTICE")} THE DAMNED POST HAS NO CLEAN DEALS LEFT FOR THIS DRIVE.`);
-            } else if (state.tradeLocation === "el-paso") {
-                await Term.writelns(`${boxLabel("NOTICE")} A MERCHANT IS OPEN HERE. TYPE MERCHANT DURING TRAIL ORDERS.`);
-            } else {
-                await Term.writelns(`${boxLabel("NOTICE")} A TRADING OPPORTUNITY IS AVAILABLE HERE. TYPE TRADE DURING TRAIL ORDERS.`);
-            }
-        }
-
-        for (const warning of herdWarningMessages()) {
-            await Term.writelns(`${boxLabel("NOTICE")} ${warning}`);
-        }
-
-        for (const warning of crewWarningMessages()) {
-            await Term.writelns(`${boxLabel("NOTICE")} ${warning}`);
+        for (const alert of statusAlerts()) {
+            await Term.writelns(`${boxLabel(alert.kind.toUpperCase())} ${alert.text}`);
         }
     }
 
@@ -4273,6 +4494,7 @@ namespace DeadwoodEngine {
         }
 
         runMode = options?.runMode ?? (options?.debugMode ? "test" : "normal");
+        renderMode = options?.renderMode ?? "shell";
         setDebugMode(Boolean(options?.debugMode));
         resetState();
         initializeRunReport();
@@ -6418,6 +6640,7 @@ namespace DeadwoodEngine {
         stop,
         autocomplete,
         getStateSnapshot: () => cloneValue(state),
+        getUiSnapshot: () => cloneValue(createGuiSnapshot()),
         getRunReport: () => currentRunReport ? cloneValue(currentRunReport) : null,
         getAvailableCommands: () => [...getAutocompleteOptions()],
         getSeed: () => seed,
@@ -6434,8 +6657,45 @@ deadwoodGlobal.DeadwoodEngine = DeadwoodEngine;
 
 if (typeof window !== "undefined") {
     const browserRoot = window as WindowWithDeadwoodGame;
+    const browserTerm: DeadwoodTermPort = {
+        clearScreen: () => {
+            if (browserRoot.DeadwoodTrailUi?.renderMode === "gui") {
+                browserRoot.DeadwoodUiBridge?.clearOutput?.();
+                return;
+            }
+
+            Term.clearScreen();
+        },
+        prompt: () => {
+            if (browserRoot.DeadwoodTrailUi?.renderMode === "gui") {
+                browserRoot.DeadwoodUiBridge?.setPromptState?.(true);
+                return;
+            }
+
+            Term.prompt();
+        },
+        hidePrompt: () => {
+            if (browserRoot.DeadwoodTrailUi?.renderMode === "gui") {
+                browserRoot.DeadwoodUiBridge?.setPromptState?.(false);
+                return;
+            }
+
+            Term.hidePrompt();
+        },
+        writelns: async (text: string) => {
+            if (browserRoot.DeadwoodTrailUi?.renderMode === "gui") {
+                const lines = String(text).split("\n");
+                for (const line of lines) {
+                    browserRoot.DeadwoodUiBridge?.pushLine?.(line);
+                }
+                return;
+            }
+
+            await Term.writelns(text);
+        },
+    };
     const browserGame = DeadwoodEngine.createGame({
-        term: Term,
+        term: browserTerm,
         root: browserRoot,
         hasDom: true,
     });

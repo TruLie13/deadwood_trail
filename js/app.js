@@ -11,6 +11,8 @@ const App = {
     stopped: false,
     cmdrun: false,
     deadwood: null,
+    deadwoodGui: null,
+    presentationMode: "launcher",
     keyboard: null,
     style: document.createElement("style"),
     loaded: {

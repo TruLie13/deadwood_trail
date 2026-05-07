@@ -28,6 +28,7 @@ module.exports = {
         "./js/xterm-addon-fit/xterm-addon-fit.js",
         "./node_modules/xterm-addon-webgl/lib/xterm-addon-webgl.js",
         "./js/xterm-addon-web-links/xterm-addon-web-links.js",
+        "./node_modules/phaser/dist/phaser.min.js",
         "./node_modules/fontfaceobserver/fontfaceobserver.standalone.js",
         "./js/utils.js",
         "./js/options.js",
@@ -41,6 +42,7 @@ module.exports = {
         "./js/ts/deadwood-bootstrap.js",
         "./js/ts/deadwood-model.js",
         "./js/ts/deadwood-game.js",
+        "./js/deadwood-gui.js",
     ],
 
     copy: {

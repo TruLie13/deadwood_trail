@@ -24,5 +24,8 @@
     "trace": "npm run build:ts && node ./scripts/trace.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build:ts && node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "phaser": "^4.1.0"
   }
 }
