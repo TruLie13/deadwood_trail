@@ -69,16 +69,6 @@
                         </section>
 
                         <section class="deadwood-gui-hud-card">
-                            <div class="deadwood-gui-panel-title">Crew</div>
-                            <div class="deadwood-meter-group">
-                                <div class="deadwood-meter-row"><span>Morale</span><strong id="deadwood-crew-morale">-</strong></div>
-                                <div class="deadwood-meter"><div id="deadwood-crew-morale-bar"></div></div>
-                                <div class="deadwood-meter-row"><span>Fear</span><strong id="deadwood-crew-fear">-</strong></div>
-                                <div class="deadwood-meter deadwood-meter-danger"><div id="deadwood-crew-fear-bar"></div></div>
-                            </div>
-                        </section>
-
-                        <section class="deadwood-gui-hud-card">
                             <div class="deadwood-gui-panel-title">Herd</div>
                             <div class="deadwood-gui-stat-block deadwood-gui-stat-block-tight">
                                 <div><span>Amount</span><strong id="deadwood-cattle-amount">-</strong></div>
@@ -102,7 +92,23 @@
                         <div id="deadwood-gui-banner-text" class="deadwood-gui-banner-text">Choose a mode to begin the drive west.</div>
                     </div>
 
-                    <div class="deadwood-gui-crew-strip" id="deadwood-crew-cards"></div>
+                    <section class="deadwood-gui-crew-wheel-panel">
+                        <div class="deadwood-gui-crew-wheel" id="deadwood-crew-wheel">
+                            <div class="deadwood-gui-crew-hub">
+                                <div class="deadwood-gui-crew-hub-metric">
+                                    <span>Morale</span>
+                                    <strong id="deadwood-crew-morale">-</strong>
+                                </div>
+                                <div class="deadwood-meter"><div id="deadwood-crew-morale-bar"></div></div>
+                                <div class="deadwood-gui-crew-hub-metric">
+                                    <span>Fear</span>
+                                    <strong id="deadwood-crew-fear">-</strong>
+                                </div>
+                                <div class="deadwood-meter deadwood-meter-danger"><div id="deadwood-crew-fear-bar"></div></div>
+                            </div>
+                            <div class="deadwood-gui-crew-arc" id="deadwood-crew-cards"></div>
+                        </div>
+                    </section>
                     <div class="deadwood-gui-toast-stack" id="deadwood-alerts"></div>
                 </div>
             </div>

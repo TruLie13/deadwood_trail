@@ -422,7 +422,7 @@ body.deadwood-mode-gui .simple-keyboard {
 
 .deadwood-gui-topbar {
     display: grid;
-    grid-template-columns: 1.1fr 1.05fr 0.9fr 1.2fr;
+    grid-template-columns: 1.1fr 1.05fr 1.2fr;
     gap: 10px;
     align-items: start;
     pointer-events: none;
@@ -557,68 +557,99 @@ body.deadwood-mode-gui .simple-keyboard {
     line-height: 1.08;
 }
 
-.deadwood-gui-crew-strip {
-    align-self: end;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
+.deadwood-gui-crew-wheel-panel {
+    position: absolute;
+    left: 14px;
+    top: 58%;
+    transform: translateY(-50%);
+    width: 296px;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.deadwood-gui-crew-wheel {
+    position: relative;
+    width: 296px;
+    height: 300px;
     pointer-events: none;
 }
 
-.deadwood-gui-card {
-    display: grid;
-    gap: 6px;
-    padding: 10px;
-    border: 2px solid rgba(243, 227, 187, 0.4);
+.deadwood-gui-crew-wheel::before {
+    content: none;
 }
 
-.deadwood-gui-card-header {
-    display: flex;
-    align-items: start;
-    justify-content: space-between;
+.deadwood-gui-crew-hub {
+    position: absolute;
+    left: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 188px;
+    height: 212px;
+    display: grid;
     gap: 12px;
+    align-content: center;
+    padding: 20px 34px 20px 18px;
+    border: 4px solid rgba(166, 142, 78, 0.95);
+    border-radius: 0 212px 212px 0;
+    background:
+        radial-gradient(circle at 34% 18%, rgba(255, 255, 255, 0.08), transparent 17%),
+        linear-gradient(180deg, rgba(18, 29, 16, 0.97), rgba(12, 14, 12, 0.98));
+    box-shadow: inset 0 0 0 1px rgba(243, 227, 187, 0.12);
+    pointer-events: none;
+    z-index: 2;
 }
 
-.deadwood-gui-card-name {
-    font-size: 18px;
-    line-height: 0.95;
+.deadwood-gui-crew-hub-metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
 }
 
-.deadwood-gui-card-role,
-.deadwood-gui-card-status {
-    font-size: 12px;
+.deadwood-gui-crew-hub-metric strong {
+    font-size: 22px;
+    line-height: 1;
 }
 
-.deadwood-gui-card-status.tone-steady {
-    color: #a8dc72;
+.deadwood-gui-crew-arc {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
 }
 
-.deadwood-gui-card-status.tone-worn {
-    color: #e7cb7f;
-}
-
-.deadwood-gui-card-status.tone-shaken {
-    color: #f39c65;
-}
-
-.deadwood-gui-card-status.tone-breaking,
-.deadwood-gui-card-status.tone-gone {
-    color: #d55f54;
-}
-
-.deadwood-gui-card-metrics {
+.deadwood-gui-crew-node {
+    position: absolute;
+    left: var(--slot-x);
+    top: var(--slot-y);
+    transform: translate(-50%, -50%);
+    width: 56px;
+    height: 56px;
+    border: 3px solid rgba(166, 142, 78, 0.95);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(28, 31, 33, 0.98), rgba(12, 14, 15, 0.98));
+    color: #f8f1da;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 8px;
+    place-items: center;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
 }
 
-.deadwood-gui-card-metrics div {
-    display: grid;
-    gap: 3px;
+.deadwood-gui-crew-node.is-selected {
+    border-color: #9fda65;
+    box-shadow: 0 0 0 3px rgba(159, 218, 101, 0.2), 0 12px 24px rgba(0, 0, 0, 0.42);
 }
 
-.deadwood-gui-card-metrics strong {
-    font-size: 15px;
+.deadwood-gui-crew-node.is-gone {
+    opacity: 0.48;
+}
+
+.deadwood-gui-crew-node svg {
+    width: 25px;
+    height: 25px;
+    display: block;
+    color: inherit;
 }
 
 .deadwood-gui-toast-stack {
@@ -761,8 +792,8 @@ body.deadwood-mode-gui .deadwood-launcher {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .deadwood-gui-crew-strip {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+    .deadwood-gui-crew-wheel-panel {
+        width: 286px;
     }
 
     .deadwood-gui-dock {
@@ -796,16 +827,39 @@ body.deadwood-mode-gui .deadwood-launcher {
         grid-template-columns: 1fr;
     }
 
+    .deadwood-gui-crew-wheel-panel {
+        position: static;
+        transform: none;
+        width: 258px;
+        align-self: end;
+        margin-top: auto;
+    }
+
+    .deadwood-gui-crew-wheel {
+        width: 258px;
+        height: 258px;
+    }
+
+    .deadwood-gui-crew-wheel::before {
+        left: 80px;
+        top: 16px;
+        width: 160px;
+        height: 224px;
+    }
+
+    .deadwood-gui-crew-hub {
+        left: 18px;
+        width: 162px;
+        height: 188px;
+        padding: 18px 28px 18px 14px;
+    }
+
     .deadwood-gui-banner-text {
         font-size: 18px;
     }
 
     .deadwood-gui-event-ribbon {
         width: calc(100% - 16px);
-    }
-
-    .deadwood-gui-crew-strip {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .deadwood-gui-card-metrics,

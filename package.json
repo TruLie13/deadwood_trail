@@ -26,6 +26,7 @@
     "test": "npm run build:ts && node --test tests/*.test.js"
   },
   "dependencies": {
+    "@phosphor-icons/core": "^2.1.1",
     "phaser": "^4.1.0"
   }
 }

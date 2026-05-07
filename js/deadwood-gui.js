@@ -58,6 +58,50 @@ const DeadwoodGui = (() => {
         "THE SILVER FOLD": { sky: 0xd8e5ed, sun: 0xffffff, mesa: 0xb4bac6, field: 0x6ba11f, trail: 0x8a6a3c, scrub: 0xd1e69b, accent: 0xcfd6f4 },
     };
 
+    const crewRoleIcons = {
+        leader: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                <path fill="currentColor" d="M216,120a8,8,0,0,0-6.78,3.76A179.9,179.9,0,0,1,195.41,143L178.32,53.07a16,16,0,0,0-25.72-9.55l-.13.1L128,64,103.53,43.62l-.13-.1a16,16,0,0,0-25.72,9.53L60.59,143a179.27,179.27,0,0,1-13.81-19.25A8,8,0,0,0,40,120a40,40,0,0,0,0,80H216a40,40,0,0,0,0-80ZM93.41,56,117.88,76.4l.12.1a15.92,15.92,0,0,0,20,0l.12-.1L162.59,56l13.68,72H79.73ZM40,184a24,24,0,0,1-4.14-47.64C51.28,159.83,67.73,174.65,82.4,184Zm88,0c-.33,0-25.49-.4-53.86-26.6L76.68,144H179.31l2.54,13.35a113.28,113.28,0,0,1-27.35,19C139.1,183.77,128.06,184,128,184Zm88,0H173.6c14.67-9.35,31.12-24.17,46.54-47.64A24,24,0,0,1,216,184Z"/>
+            </svg>
+        `,
+        scout: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                <path fill="currentColor" d="M237.2,151.87v0a47.1,47.1,0,0,0-2.35-5.45L193.26,51.8a7.82,7.82,0,0,0-1.66-2.44,32,32,0,0,0-45.26,0A8,8,0,0,0,144,55V80H112V55a8,8,0,0,0-2.34-5.66,32,32,0,0,0-45.26,0,7.82,7.82,0,0,0-1.66,2.44L21.15,146.4a47.1,47.1,0,0,0-2.35,5.45v0A48,48,0,1,0,112,168V96h32v72a48,48,0,1,0,93.2-16.13ZM76.71,59.75a16,16,0,0,1,19.29-1v73.51a47.9,47.9,0,0,0-46.79-9.92ZM64,200a32,32,0,1,1,32-32A32,32,0,0,1,64,200ZM160,58.74a16,16,0,0,1,19.29,1l27.5,62.58A47.9,47.9,0,0,0,160,132.25ZM192,200a32,32,0,1,1,32-32A32,32,0,0,1,192,200Z"/>
+            </svg>
+        `,
+        drover: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                <path fill="currentColor" d="M205.73,59.93C184.85,47.08,157.24,40,128,40S71.15,47.08,50.27,59.93C28.17,73.52,16,92,16,112S28.17,150.44,50.27,164c19,11.67,43.49,18.56,69.73,19.73v0a37.35,37.35,0,0,1-18.58,33c-14.64,8.86-34.62,9.52-49.72,1.64a8,8,0,1,0-7.4,14.18A66.4,66.4,0,0,0,75,240a67.31,67.31,0,0,0,34.74-9.5c17-10.27,26.29-26.86,26.29-46.7v0c26.24-1.17,50.76-8.06,69.73-19.73C227.83,150.44,240,132,240,112S227.83,73.52,205.73,59.93ZM67.41,155.18c5.24-9.55,15.44-12,23.53-11,10.9,1.42,21.86,9.13,26.61,23.42C99.11,166.45,81.85,162.16,67.41,155.18Zm129.94-4.77c-16.95,10.43-39.17,16.53-63.13,17.43a54.37,54.37,0,0,0-11.39-23.07A47.17,47.17,0,0,0,93,128.35c-17-2.2-31.72,5.11-39.38,18.7C39.64,137,32,124.73,32,112c0-14.21,9.47-27.86,26.65-38.43C77.05,62.23,101.68,56,128,56S179,62.23,197.35,73.55C214.53,84.12,224,97.77,224,112S214.53,139.84,197.35,150.41Z"/>
+            </svg>
+        `,
+        hunter: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                <path fill="currentColor" d="M221.87,83.16A104.1,104.1,0,1,1,195.67,49l22.67-22.68a8,8,0,0,1,11.32,11.32l-96,96a8,8,0,0,1-11.32-11.32l27.72-27.72a40,40,0,1,0,17.87,31.09,8,8,0,1,1,16-.9,56,56,0,1,1-22.38-41.65L184.3,60.39a87.88,87.88,0,1,0,23.13,29.67,8,8,0,0,1,14.44-6.9Z"/>
+            </svg>
+        `,
+        hand: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                <path fill="currentColor" d="M251.34,112,183.88,44.08a96.1,96.1,0,0,0-135.77,0l-.09.09L34.25,58.4A8,8,0,0,0,45.74,69.53L59.47,55.35a79.92,79.92,0,0,1,18.71-13.9L124.68,88l-96,96a16,16,0,0,0,0,22.63l20.69,20.69a16,16,0,0,0,22.63,0l96-96,14.34,14.34h0L200,163.3a16,16,0,0,0,22.63,0l28.69-28.69A16,16,0,0,0,251.34,112ZM60.68,216,40,195.31l68-68L128.68,148ZM162.34,114.32,140,136.67,119.31,116l22.35-22.35a8,8,0,0,0,0-11.32L94.32,35a80,80,0,0,1,78.23,20.41l44.22,44.51L188,128.66l-14.34-14.34A8,8,0,0,0,162.34,114.32Zm49,37.66-12-12L228,111.25l12,12Z"/>
+            </svg>
+        `,
+    };
+
+    const crewWheelSlots = [
+        { x: "196px", y: "48px" },
+        { x: "242px", y: "94px" },
+        { x: "260px", y: "150px" },
+        { x: "242px", y: "206px" },
+        { x: "196px", y: "252px" },
+    ];
+
+    const crewWheelSlotsCompact = [
+        { x: "176px", y: "42px" },
+        { x: "214px", y: "84px" },
+        { x: "230px", y: "134px" },
+        { x: "214px", y: "184px" },
+        { x: "176px", y: "226px" },
+    ];
+
     const state = {
         snapshot: null,
         outputLines: [],
@@ -281,23 +325,31 @@ const DeadwoodGui = (() => {
     }
 
     function renderCrewCards(snapshot) {
-        refs.crewCards.innerHTML = snapshot.crew.cards.map(card => `
-            <article class="deadwood-gui-card">
-                <div class="deadwood-gui-card-header">
-                    <div>
-                        <div class="deadwood-gui-card-name">${card.name}</div>
-                        <div class="deadwood-gui-card-role">${card.role}${card.isLeader ? " / leader" : ""}</div>
-                    </div>
-                    <div class="deadwood-gui-card-status tone-${card.statusTone}">${card.statusLabel}</div>
-                </div>
-                <div class="deadwood-gui-card-metrics">
-                    <div><span>Health</span><strong>${card.health}</strong></div>
-                    <div><span>Morale</span><strong>${card.morale}</strong></div>
-                    <div><span>Fear</span><strong>${card.fear}</strong></div>
-                    <div><span>Hunger</span><strong>${card.hunger}</strong></div>
-                </div>
-            </article>
-        `).join("");
+        const cards = snapshot.crew.cards;
+        if (!cards.length) {
+            refs.crewCards.innerHTML = "";
+            return;
+        }
+
+        const slots = window.innerWidth <= 720 ? crewWheelSlotsCompact : crewWheelSlots;
+
+        refs.crewCards.innerHTML = cards.map((card, index) => {
+            const slot = slots[index] ?? slots[slots.length - 1];
+            const icon = crewRoleIcons[card.role] ?? "";
+
+            return `
+                <button
+                    type="button"
+                    class="deadwood-gui-crew-node${card.alive ? "" : " is-gone"}"
+                    data-crew-id="${card.id}"
+                    style="--slot-x:${slot.x}; --slot-y:${slot.y};"
+                    aria-label="${escapeHtml(`${card.name}, ${card.role}, ${card.statusLabel}`)}"
+                    title="${escapeHtml(`${card.name} · ${card.role} · ${card.statusLabel}`)}"
+                >
+                    ${icon}
+                </button>
+            `;
+        }).join("");
     }
 
     function renderAlerts(snapshot) {
