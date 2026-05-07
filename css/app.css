@@ -562,33 +562,77 @@ body.deadwood-mode-gui .simple-keyboard {
     left: 14px;
     top: 58%;
     transform: translateY(-50%);
-    width: 296px;
+    width: 176px;
     pointer-events: none;
     z-index: 4;
 }
 
 .deadwood-gui-crew-wheel {
     position: relative;
-    width: 296px;
-    height: 300px;
+    width: 176px;
+    height: 352px;
     pointer-events: none;
 }
 
 .deadwood-gui-crew-wheel::before {
-    content: none;
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 176px;
+    height: 352px;
+    border-radius: 0 176px 176px 0;
+    background: 
+        conic-gradient(
+            from 0deg at 0% 50%,
+            transparent 0deg 35deg,
+            rgba(166, 142, 78, 0.9) 35deg 37deg,
+            transparent 37deg 71deg,
+            rgba(166, 142, 78, 0.9) 71deg 73deg,
+            transparent 73deg 107deg,
+            rgba(166, 142, 78, 0.9) 107deg 109deg,
+            transparent 109deg 143deg,
+            rgba(166, 142, 78, 0.9) 143deg 145deg,
+            transparent 145deg 180deg
+        ),
+        conic-gradient(
+            from 0deg at 0% 50%,
+            rgba(255, 255, 255, 0.05) 0deg 36deg,
+            transparent 36deg 72deg,
+            rgba(255, 255, 255, 0.05) 72deg 108deg,
+            transparent 108deg 144deg,
+            rgba(255, 255, 255, 0.05) 144deg 180deg
+        ),
+        radial-gradient(circle at 0% 50%, 
+            transparent 104px, 
+            rgba(0, 0, 0, 0.6) 104px 170px, 
+            rgba(166, 142, 78, 0.8) 170px 176px, 
+            transparent 176px
+        );
+    -webkit-mask-image: conic-gradient(
+        from 0deg at 0% 50%,
+        black 0deg 180deg
+    );
+    mask-image: conic-gradient(
+        from 0deg at 0% 50%,
+        black 0deg 180deg
+    );
+    z-index: 1;
 }
 
 .deadwood-gui-crew-hub {
     position: absolute;
-    left: 22px;
+    left: 0;
     top: 50%;
     transform: translateY(-50%);
-    width: 188px;
+    width: 106px;
     height: 212px;
+    box-sizing: border-box;
     display: grid;
     gap: 12px;
     align-content: center;
-    padding: 20px 34px 20px 18px;
+    padding: 16px 12px 16px 8px;
     border: 4px solid rgba(166, 142, 78, 0.95);
     border-radius: 0 212px 212px 0;
     background:
@@ -601,14 +645,23 @@ body.deadwood-mode-gui .simple-keyboard {
 
 .deadwood-gui-crew-hub-metric {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
 
 .deadwood-gui-crew-hub-metric strong {
-    font-size: 22px;
+    font-size: 32px;
     line-height: 1;
+}
+
+.deadwood-gui-crew-hub-metric span {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.7;
+    margin-top: 4px;
 }
 
 .deadwood-gui-crew-arc {
@@ -623,22 +676,25 @@ body.deadwood-mode-gui .simple-keyboard {
     left: var(--slot-x);
     top: var(--slot-y);
     transform: translate(-50%, -50%);
-    width: 56px;
-    height: 56px;
-    border: 3px solid rgba(166, 142, 78, 0.95);
-    border-radius: 999px;
-    background: linear-gradient(180deg, rgba(28, 31, 33, 0.98), rgba(12, 14, 15, 0.98));
+    width: 76px;
+    height: 76px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    border-radius: 50%;
     color: #f8f1da;
     display: grid;
     place-items: center;
     cursor: pointer;
     pointer-events: auto;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+    transition: color 0.2s, transform 0.2s;
+    outline: none;
 }
 
 .deadwood-gui-crew-node.is-selected {
-    border-color: #9fda65;
-    box-shadow: 0 0 0 3px rgba(159, 218, 101, 0.2), 0 12px 24px rgba(0, 0, 0, 0.42);
+    color: #9fda65;
+    transform: translate(-50%, -50%) scale(1.15);
+    filter: drop-shadow(0 0 8px rgba(159, 218, 101, 0.6));
 }
 
 .deadwood-gui-crew-node.is-gone {
@@ -793,7 +849,7 @@ body.deadwood-mode-gui .deadwood-launcher {
     }
 
     .deadwood-gui-crew-wheel-panel {
-        width: 286px;
+        width: 176px;
     }
 
     .deadwood-gui-dock {
@@ -830,28 +886,68 @@ body.deadwood-mode-gui .deadwood-launcher {
     .deadwood-gui-crew-wheel-panel {
         position: static;
         transform: none;
-        width: 258px;
+        width: 164px;
         align-self: end;
         margin-top: auto;
     }
 
     .deadwood-gui-crew-wheel {
-        width: 258px;
-        height: 258px;
+        width: 164px;
+        height: 328px;
     }
 
     .deadwood-gui-crew-wheel::before {
-        left: 80px;
-        top: 16px;
-        width: 160px;
-        height: 224px;
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 164px;
+        height: 328px;
+        border-radius: 0 164px 164px 0;
+        background: 
+            conic-gradient(
+                from 0deg at 0% 50%,
+                transparent 0deg 35deg,
+                rgba(166, 142, 78, 0.9) 35deg 37deg,
+                transparent 37deg 71deg,
+                rgba(166, 142, 78, 0.9) 71deg 73deg,
+                transparent 73deg 107deg,
+                rgba(166, 142, 78, 0.9) 107deg 109deg,
+                transparent 109deg 143deg,
+                rgba(166, 142, 78, 0.9) 143deg 145deg,
+                transparent 145deg 180deg
+            ),
+            conic-gradient(
+                from 0deg at 0% 50%,
+                rgba(255, 255, 255, 0.05) 0deg 36deg,
+                transparent 36deg 72deg,
+                rgba(255, 255, 255, 0.05) 72deg 108deg,
+                transparent 108deg 144deg,
+                rgba(255, 255, 255, 0.05) 144deg 180deg
+            ),
+            radial-gradient(circle at 0% 50%, 
+                transparent 92px, 
+                rgba(0, 0, 0, 0.6) 92px 160px, 
+                rgba(166, 142, 78, 0.8) 160px 164px, 
+                transparent 164px
+            );
+        -webkit-mask-image: conic-gradient(from 0deg at 0% 50%, black 0deg 180deg);
+        mask-image: conic-gradient(from 0deg at 0% 50%, black 0deg 180deg);
+        z-index: 1;
     }
 
     .deadwood-gui-crew-hub {
-        left: 18px;
-        width: 162px;
+        left: 0;
+        width: 94px;
         height: 188px;
-        padding: 18px 28px 18px 14px;
+        box-sizing: border-box;
+        padding: 12px 10px 12px 6px;
+        border-radius: 0 188px 188px 0;
+    }
+
+    .deadwood-gui-crew-hub-metric strong {
+        font-size: 26px;
     }
 
     .deadwood-gui-banner-text {

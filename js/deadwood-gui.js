@@ -11,8 +11,6 @@ const DeadwoodGui = (() => {
         nextLocation: document.getElementById("deadwood-next-location"),
         crewMorale: document.getElementById("deadwood-crew-morale"),
         crewFear: document.getElementById("deadwood-crew-fear"),
-        crewMoraleBar: document.getElementById("deadwood-crew-morale-bar"),
-        crewFearBar: document.getElementById("deadwood-crew-fear-bar"),
         cattleAmount: document.getElementById("deadwood-cattle-amount"),
         cattleHealth: document.getElementById("deadwood-cattle-health"),
         cattleStress: document.getElementById("deadwood-cattle-stress"),
@@ -87,19 +85,19 @@ const DeadwoodGui = (() => {
     };
 
     const crewWheelSlots = [
-        { x: "196px", y: "48px" },
-        { x: "242px", y: "94px" },
-        { x: "260px", y: "150px" },
-        { x: "242px", y: "206px" },
-        { x: "196px", y: "252px" },
+        { x: "43px", y: "45px" },
+        { x: "112px", y: "95px" },
+        { x: "138px", y: "176px" },
+        { x: "112px", y: "257px" },
+        { x: "43px", y: "307px" },
     ];
 
     const crewWheelSlotsCompact = [
-        { x: "176px", y: "42px" },
-        { x: "214px", y: "84px" },
-        { x: "230px", y: "134px" },
-        { x: "214px", y: "184px" },
-        { x: "176px", y: "226px" },
+        { x: "39px", y: "44px" },
+        { x: "102px", y: "90px" },
+        { x: "126px", y: "164px" },
+        { x: "102px", y: "238px" },
+        { x: "39px", y: "284px" },
     ];
 
     const state = {
@@ -518,9 +516,7 @@ const DeadwoodGui = (() => {
             : "Destination Reached";
 
         refs.crewMorale.textContent = `${snapshot.crew.morale}`;
-        refs.crewFear.textContent = `${snapshot.crew.fear} / ${snapshot.crew.fearLabel}`;
-        setMeter(refs.crewMoraleBar, snapshot.crew.morale);
-        setMeter(refs.crewFearBar, snapshot.crew.fear);
+        refs.crewFear.textContent = `${snapshot.crew.fear}`;
 
         refs.cattleAmount.textContent = `${snapshot.cattle.amount}`;
         refs.cattleHealth.textContent = `${snapshot.cattle.health} / ${snapshot.cattle.conditionLabel}`;
