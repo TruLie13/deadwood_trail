@@ -16,15 +16,16 @@ const DeadwoodGui = (() => {
         cattleStress: document.getElementById("deadwood-cattle-stress"),
         cattleFatigue: document.getElementById("deadwood-cattle-fatigue"),
         cattleBlight: document.getElementById("deadwood-cattle-blight"),
-        cattleHealthBar: document.getElementById("deadwood-cattle-health-bar"),
-        cattleStressBar: document.getElementById("deadwood-cattle-stress-bar"),
-        cattleFatigueBar: document.getElementById("deadwood-cattle-fatigue-bar"),
-        wagonStructure: document.getElementById("deadwood-wagon-structure"),
-        wagonSanctity: document.getElementById("deadwood-wagon-sanctity"),
-        wagonStructureBar: document.getElementById("deadwood-wagon-structure-bar"),
-        wagonSanctityBar: document.getElementById("deadwood-wagon-sanctity-bar"),
         items: document.getElementById("deadwood-items"),
         crewCards: document.getElementById("deadwood-crew-cards"),
+        crewDetail: document.getElementById("deadwood-crew-detail"),
+        crewDetailClose: document.getElementById("deadwood-crew-detail-close"),
+        crewDetailIcon: document.getElementById("deadwood-crew-detail-icon"),
+        crewDetailName: document.getElementById("deadwood-crew-detail-name"),
+        crewDetailRole: document.getElementById("deadwood-crew-detail-role"),
+        crewDetailStatus: document.getElementById("deadwood-crew-detail-status"),
+        crewDetailStats: document.getElementById("deadwood-crew-detail-stats"),
+        crewDetailFate: document.getElementById("deadwood-crew-detail-fate"),
         commandForm: document.getElementById("deadwood-command-form"),
         commandInput: document.getElementById("deadwood-command-input"),
         commandHint: document.getElementById("deadwood-command-hint"),
@@ -112,6 +113,12 @@ const DeadwoodGui = (() => {
         scene: null,
         launchInFlight: false,
         lastMiles: 0,
+        // crewFateLog: maps crew id -> { lossType, detail } for gone members
+        crewFateLog: {},
+        // crewAliveMap: tracks previous alive status to detect transitions
+        crewAliveMap: {},
+        // currently open crew detail id
+        openCrewId: null,
     };
 
     function clamp(value, min, max) {
@@ -119,6 +126,9 @@ const DeadwoodGui = (() => {
     }
 
     function setMeter(el, value) {
+        if (!el) {
+            return;
+        }
         el.style.width = `${clamp(value, 0, 100)}%`;
     }
 
@@ -154,6 +164,11 @@ const DeadwoodGui = (() => {
         state.outputLines = [];
         state.latestReportLines = [];
         state.captureReportBlock = false;
+        state.crewFateLog = {};
+        state.crewAliveMap = {};
+        if (state.openCrewId !== null && refs.crewDetail) {
+            closeCrewDetail();
+        }
         setBanner("The trail waits on your next order.");
         if (refs.reportLog) {
             refs.reportLog.innerHTML = "";
@@ -322,6 +337,33 @@ const DeadwoodGui = (() => {
         }).join("");
     }
 
+    function detectCrewFateFromOutput(member) {
+        const nameKey = member.name.split(" ")[0].toUpperCase();
+        // Walk recent output lines in reverse to find the first CREW LOSS line
+        // that mentions this member's name.
+        for (let i = state.outputLines.length - 1; i >= 0; i -= 1) {
+            const line = state.outputLines[i];
+            if (line.includes("CREW LOSS:") && line.toUpperCase().includes(nameKey)) {
+                // Strip the "CREW LOSS: NAME DIES/DESERTS/IS EXILED." prefix
+                const detail = line.replace(/^CREW LOSS:\s*/i, "").trim();
+                let lossType = "gone";
+                if (/\bTAKES THEIR OWN LIFE\b/i.test(detail)) {
+                    lossType = "suicide";
+                } else if (/\bMUTINOUS\b/i.test(detail) || /\bMUTINY\b/i.test(detail)) {
+                    lossType = "mutinied";
+                } else if (/\bDIES\b/i.test(detail)) {
+                    lossType = "death";
+                } else if (/\bDESERTS\b/i.test(detail)) {
+                    lossType = "desertion";
+                } else if (/\bEXILED\b/i.test(detail)) {
+                    lossType = "exiled";
+                }
+                return { lossType, detail };
+            }
+        }
+        return null;
+    }
+
     function renderCrewCards(snapshot) {
         const cards = snapshot.crew.cards;
         if (!cards.length) {
@@ -329,25 +371,50 @@ const DeadwoodGui = (() => {
             return;
         }
 
+        // Detect newly-gone crew and log their fate from output lines
+        cards.forEach(card => {
+            const wasAlive = state.crewAliveMap[card.id];
+            if (wasAlive === true && !card.alive) {
+                const fate = detectCrewFateFromOutput(card);
+                if (fate) {
+                    state.crewFateLog[card.id] = fate;
+                }
+            }
+            state.crewAliveMap[card.id] = card.alive;
+        });
+
         const slots = window.innerWidth <= 720 ? crewWheelSlotsCompact : crewWheelSlots;
 
         refs.crewCards.innerHTML = cards.map((card, index) => {
             const slot = slots[index] ?? slots[slots.length - 1];
             const icon = crewRoleIcons[card.role] ?? "";
+            const isSelected = state.openCrewId === card.id;
 
             return `
                 <button
                     type="button"
-                    class="deadwood-gui-crew-node${card.alive ? "" : " is-gone"}"
+                    class="deadwood-gui-crew-node${card.alive ? "" : " is-gone"}${isSelected ? " is-selected" : ""}"
                     data-crew-id="${card.id}"
+                    data-status-tone="${card.statusTone || (card.alive ? 'steady' : 'gone')}"
                     style="--slot-x:${slot.x}; --slot-y:${slot.y};"
                     aria-label="${escapeHtml(`${card.name}, ${card.role}, ${card.statusLabel}`)}"
-                    title="${escapeHtml(`${card.name} · ${card.role} · ${card.statusLabel}`)}"
+                    aria-pressed="${isSelected}"
+                    title="${escapeHtml(`${card.name} \u00b7 ${card.role} \u00b7 ${card.statusLabel}`)}"
                 >
                     ${icon}
                 </button>
             `;
         }).join("");
+
+        // Keep detail panel fresh if it is open
+        if (state.openCrewId !== null) {
+            const openCard = cards.find(c => c.id === state.openCrewId);
+            if (openCard) {
+                populateCrewDetail(openCard);
+            } else {
+                closeCrewDetail();
+            }
+        }
     }
 
     function renderAlerts(snapshot) {
@@ -523,14 +590,6 @@ const DeadwoodGui = (() => {
         refs.cattleStress.textContent = `${snapshot.cattle.stress} / ${snapshot.cattle.stressLabel}`;
         refs.cattleFatigue.textContent = `${snapshot.cattle.fatigue}`;
         refs.cattleBlight.textContent = `${snapshot.cattle.blight}`;
-        setMeter(refs.cattleHealthBar, snapshot.cattle.health);
-        setMeter(refs.cattleStressBar, snapshot.cattle.stress);
-        setMeter(refs.cattleFatigueBar, snapshot.cattle.fatigue);
-
-        refs.wagonStructure.textContent = `${snapshot.wagon.structure}`;
-        refs.wagonSanctity.textContent = `${snapshot.wagon.sanctity}`;
-        setMeter(refs.wagonStructureBar, snapshot.wagon.structure);
-        setMeter(refs.wagonSanctityBar, snapshot.wagon.sanctity);
 
         renderItems(snapshot);
         renderCrewCards(snapshot);
@@ -840,6 +899,144 @@ const DeadwoodGui = (() => {
 
         state.phaserGame.scale.resize(refs.canvas.clientWidth, refs.canvas.clientHeight);
     }
+
+    // ── Crew detail card ─────────────────────────────
+
+    function buildStatRow(label, value, fillClass, pct, isLow, isHigh) {
+        const dangerClass = isLow ? " is-low" : isHigh ? " is-high" : "";
+        return `
+            <div class="deadwood-crew-detail-stat">
+                <span class="deadwood-crew-detail-stat-label">${label}</span>
+                <div class="deadwood-crew-detail-stat-bar-wrap">
+                    <div class="deadwood-crew-detail-stat-bar" aria-hidden="true">
+                        <div
+                            class="deadwood-crew-detail-stat-bar-fill ${fillClass}${dangerClass}"
+                            style="width:${pct}%"
+                        ></div>
+                    </div>
+                    <span class="deadwood-crew-detail-stat-value">${value}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function populateCrewDetail(card) {
+        const icon = crewRoleIcons[card.role] ?? "";
+        const isGone = !card.alive;
+        const tone = card.statusTone || (isGone ? "gone" : "steady");
+        const fate = state.crewFateLog[card.id] ?? null;
+
+        refs.crewDetailIcon.innerHTML = icon;
+        refs.crewDetailIcon.className = `deadwood-crew-detail-icon${isGone ? " is-gone" : ""}`;
+
+        refs.crewDetailName.textContent = card.name;
+
+        const roleLabel = card.isLeader && card.role !== "leader" ? `${card.role} · Leader` : card.role;
+        refs.crewDetailRole.textContent = roleLabel;
+        refs.crewDetailRole.className = `deadwood-crew-detail-role${isGone ? " is-gone" : ""}`;
+
+        const displayStatus = (isGone && fate) ? fate.lossType : card.statusLabel;
+        refs.crewDetailStatus.textContent = displayStatus;
+        refs.crewDetailStatus.className = `deadwood-crew-detail-status-badge tone-${tone}`;
+
+        if (isGone) {
+            // Gone crew: show grayed-out zeroed stats
+            refs.crewDetailStats.innerHTML = [
+                buildStatRow("Health",  0,  "fill-health",  0,  true,  false),
+                buildStatRow("Morale",  0,  "fill-morale",  0,  true,  false),
+                buildStatRow("Fear",    0,  "fill-fear",    0,  false, false),
+                buildStatRow("Hunger",  0,  "fill-hunger",  0,  false, false),
+            ].join("");
+        } else {
+            refs.crewDetailStats.innerHTML = [
+                buildStatRow("Health", card.health, "fill-health", card.health,
+                    card.health <= 40, false),
+                buildStatRow("Morale", card.morale, "fill-morale", card.morale,
+                    card.morale <= 30, false),
+                buildStatRow("Fear",   card.fear,   "fill-fear",   card.fear,
+                    false, card.fear >= 70),
+                buildStatRow("Hunger", card.hunger, "fill-hunger", card.hunger,
+                    false, card.hunger >= 70),
+            ].join("");
+        }
+
+        // Fate/reason section
+        if (isGone && fate) {
+            // Strip the leading "NAME DIES/DESERTS." part to isolate the narrative
+            const namePart = card.name + " ";
+            let detail = fate.detail;
+            // Try to remove the first sentence if it's just "NAME DIES."
+            const sentenceEnd = detail.indexOf(". ");
+            if (sentenceEnd !== -1 && sentenceEnd < namePart.length + 20) {
+                detail = detail.slice(sentenceEnd + 2);
+            }
+            refs.crewDetailFate.hidden = false;
+            refs.crewDetailFate.innerHTML = `
+                <span class="deadwood-crew-detail-fate-label">${fate.lossType}</span>
+                ${escapeHtml(detail)}
+            `;
+        } else {
+            refs.crewDetailFate.hidden = true;
+        }
+    }
+
+    function openCrewDetail(card) {
+        state.openCrewId = card.id;
+        populateCrewDetail(card);
+        refs.crewDetail.hidden = false;
+        refs.crewDetail.removeAttribute("aria-hidden");
+        refs.crewDetailClose.focus();
+    }
+
+    function closeCrewDetail() {
+        state.openCrewId = null;
+        refs.crewDetail.hidden = true;
+        refs.crewDetail.setAttribute("aria-hidden", "true");
+        // Remove is-selected from all nodes
+        refs.crewCards.querySelectorAll(".deadwood-gui-crew-node.is-selected").forEach(btn => {
+            btn.classList.remove("is-selected");
+            btn.setAttribute("aria-pressed", "false");
+        });
+    }
+
+    refs.crewCards.addEventListener("click", event => {
+        const button = event.target.closest("button[data-crew-id]");
+        if (!button || !state.snapshot) {
+            return;
+        }
+
+        const id = Number(button.dataset.crewId);
+        if (state.openCrewId === id) {
+            closeCrewDetail();
+            return;
+        }
+
+        const card = state.snapshot.crew.cards.find(c => c.id === id);
+        if (!card) {
+            return;
+        }
+
+        openCrewDetail(card);
+        // Sync selected state on buttons
+        refs.crewCards.querySelectorAll("button[data-crew-id]").forEach(btn => {
+            const selected = Number(btn.dataset.crewId) === id;
+            btn.classList.toggle("is-selected", selected);
+            btn.setAttribute("aria-pressed", String(selected));
+        });
+    });
+
+    refs.crewDetailClose.addEventListener("click", () => {
+        closeCrewDetail();
+    });
+
+    // Close on Escape key
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && state.openCrewId !== null) {
+            closeCrewDetail();
+        }
+    });
+
+    // ── Command form ─────────────────────────────────
 
     refs.commandForm.addEventListener("submit", event => {
         event.preventDefault();

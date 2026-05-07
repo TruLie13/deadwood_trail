@@ -76,14 +76,7 @@
                                 <div><span>Stress</span><strong id="deadwood-cattle-stress">-</strong></div>
                                 <div><span>Fatigue</span><strong id="deadwood-cattle-fatigue">-</strong></div>
                                 <div><span>Blight</span><strong id="deadwood-cattle-blight">-</strong></div>
-                                <div><span>Wagon</span><strong id="deadwood-wagon-structure">-</strong></div>
-                                <div><span>Sanctity</span><strong id="deadwood-wagon-sanctity">-</strong></div>
                             </div>
-                            <div class="deadwood-meter"><div id="deadwood-cattle-health-bar"></div></div>
-                            <div class="deadwood-meter deadwood-meter-danger"><div id="deadwood-cattle-stress-bar"></div></div>
-                            <div class="deadwood-meter deadwood-meter-warning"><div id="deadwood-cattle-fatigue-bar"></div></div>
-                            <div class="deadwood-meter"><div id="deadwood-wagon-structure-bar"></div></div>
-                            <div class="deadwood-meter deadwood-meter-warning"><div id="deadwood-wagon-sanctity-bar"></div></div>
                         </section>
                     </div>
 
@@ -108,6 +101,35 @@
                         </div>
                     </section>
                     <div class="deadwood-gui-toast-stack" id="deadwood-alerts"></div>
+                </div>
+
+                <div
+                    id="deadwood-crew-detail"
+                    class="deadwood-crew-detail"
+                    role="dialog"
+                    aria-modal="false"
+                    aria-label="Crew member details"
+                    aria-hidden="true"
+                    hidden
+                >
+                    <button
+                        type="button"
+                        id="deadwood-crew-detail-close"
+                        class="deadwood-crew-detail-close"
+                        aria-label="Close crew member details"
+                    >&#x2715;</button>
+                    <div class="deadwood-crew-detail-header">
+                        <div class="deadwood-crew-detail-icon" id="deadwood-crew-detail-icon" aria-hidden="true"></div>
+                        <div class="deadwood-crew-detail-identity">
+                            <div class="deadwood-crew-detail-name" id="deadwood-crew-detail-name">—</div>
+                            <div class="deadwood-crew-detail-sub">
+                                <div class="deadwood-crew-detail-role" id="deadwood-crew-detail-role">—</div>
+                                <div class="deadwood-crew-detail-status-badge" id="deadwood-crew-detail-status">—</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="deadwood-crew-detail-stats" id="deadwood-crew-detail-stats" aria-label="Crew member statistics"></div>
+                    <div class="deadwood-crew-detail-fate" id="deadwood-crew-detail-fate" hidden></div>
                 </div>
             </div>
         </div>
