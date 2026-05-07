@@ -627,6 +627,9 @@ body.deadwood-mode-gui .simple-keyboard {
     transform: translateY(-50%);
     width: 106px;
     height: 212px;
+    --crew-morale-deg: 0deg;
+    --crew-fear-deg: 0deg;
+    --crew-hub-core: rgba(12, 14, 12, 0.96);
     box-sizing: border-box;
     display: grid;
     gap: 12px;
@@ -640,27 +643,77 @@ body.deadwood-mode-gui .simple-keyboard {
     box-shadow: inset 0 0 0 1px rgba(243, 227, 187, 0.12);
     pointer-events: none;
     z-index: 2;
+    transition: background 1s ease;
+}
+
+.deadwood-gui-crew-hub::before,
+.deadwood-gui-crew-hub::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    border-radius: inherit;
+}
+
+.deadwood-gui-crew-hub::before {
+    inset: 7px;
+    background:
+        conic-gradient(
+            from 0deg at 0% 50%,
+            #8bc1f7 0deg var(--crew-morale-deg),
+            rgba(139, 193, 247, 0.13) var(--crew-morale-deg) 90deg,
+            rgba(224, 122, 90, 0.13) 90deg calc(180deg - var(--crew-fear-deg)),
+            #e07a5a calc(180deg - var(--crew-fear-deg)) 180deg
+        );
+    box-shadow:
+        inset 0 0 0 1px rgba(243, 227, 187, 0.18),
+        0 0 14px rgba(139, 193, 247, 0.14),
+        0 0 14px rgba(224, 122, 90, 0.12);
+    z-index: 0;
+}
+
+.deadwood-gui-crew-hub::after {
+    inset: 21px 20px 21px 0;
+    background:
+        radial-gradient(circle at 38% 20%, rgba(255, 255, 255, 0.08), transparent 20%),
+        linear-gradient(180deg, rgba(18, 29, 16, 0.96), var(--crew-hub-core));
+    box-shadow: inset -1px 0 0 rgba(243, 227, 187, 0.12);
+    z-index: 1;
+}
+
+.deadwood-gui-crew-hub-metrics {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    gap: 10px;
+    width: 62px;
+    margin-left: 4px;
 }
 
 .deadwood-gui-crew-hub-metric {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-
-.deadwood-gui-crew-hub-metric strong {
-    font-size: 32px;
+    display: grid;
+    gap: 1px;
+    text-transform: uppercase;
+    letter-spacing: 0;
     line-height: 1;
 }
 
 .deadwood-gui-crew-hub-metric span {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    opacity: 0.7;
-    margin-top: 4px;
+    font-size: 9px;
+    color: rgba(244, 238, 216, 0.58);
+}
+
+.deadwood-gui-crew-hub-metric strong {
+    font-size: 23px;
+    color: #f8f1da;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+}
+
+.deadwood-gui-crew-hub-metric.is-morale strong {
+    color: #8bc1f7;
+}
+
+.deadwood-gui-crew-hub-metric.is-fear strong {
+    color: #e07a5a;
 }
 
 .deadwood-gui-crew-arc {
@@ -1261,8 +1314,22 @@ body.deadwood-mode-gui .deadwood-launcher {
         border-radius: 0 188px 188px 0;
     }
 
+    .deadwood-gui-crew-hub::before {
+        inset: 6px;
+    }
+
+    .deadwood-gui-crew-hub::after {
+        inset: 19px 18px 19px 0;
+    }
+
+    .deadwood-gui-crew-hub-metrics {
+        gap: 8px;
+        width: 56px;
+        margin-left: 3px;
+    }
+
     .deadwood-gui-crew-hub-metric strong {
-        font-size: 26px;
+        font-size: 21px;
     }
 
     .deadwood-gui-banner-text {

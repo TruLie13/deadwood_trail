@@ -9,8 +9,7 @@ const DeadwoodGui = (() => {
         miles: document.getElementById("deadwood-miles"),
         location: document.getElementById("deadwood-location"),
         nextLocation: document.getElementById("deadwood-next-location"),
-        crewMorale: document.getElementById("deadwood-crew-morale"),
-        crewFear: document.getElementById("deadwood-crew-fear"),
+        crewHub: document.getElementById("deadwood-crew-hub"),
         cattleAmount: document.getElementById("deadwood-cattle-amount"),
         cattleHealth: document.getElementById("deadwood-cattle-health"),
         cattleStress: document.getElementById("deadwood-cattle-stress"),
@@ -582,8 +581,43 @@ const DeadwoodGui = (() => {
             ? `${snapshot.location.next} (${snapshot.location.milesToNext} mi)`
             : "Destination Reached";
 
-        refs.crewMorale.textContent = `${snapshot.crew.morale}`;
-        refs.crewFear.textContent = `${snapshot.crew.fear}`;
+        const morale = snapshot.crew.morale;
+        const fear = snapshot.crew.fear;
+
+        // Dynamic "Mood Glow" for the D-shape hub
+        let moodColor1 = "rgba(76, 175, 80, 0.25)"; // Default steady green glow
+        let moodColor2 = "rgba(18, 40, 18, 0.95)";
+        
+        if (fear >= 70) {
+            moodColor1 = "rgba(240, 58, 58, 0.35)"; // Dark crimson glow (High Fear)
+            moodColor2 = "rgba(60, 10, 10, 0.95)";
+        } else if (fear >= 40 || morale <= 30) {
+            moodColor1 = "rgba(242, 208, 36, 0.25)"; // Amber/Orange glow (Worn/Shaken)
+            moodColor2 = "rgba(60, 35, 10, 0.95)";
+        } else if (morale >= 70) {
+            moodColor1 = "rgba(118, 227, 70, 0.35)"; // Brighter green glow (High Morale)
+            moodColor2 = "rgba(25, 60, 25, 0.95)";
+        }
+
+        refs.crewHub.style.background = `
+            radial-gradient(circle at 34% 18%, rgba(255, 255, 255, 0.08), transparent 17%),
+            linear-gradient(180deg, ${moodColor1}, ${moodColor2})
+        `;
+        refs.crewHub.style.setProperty("--crew-morale-deg", `${clamp(morale, 0, 100) * 0.9}deg`);
+        refs.crewHub.style.setProperty("--crew-fear-deg", `${clamp(fear, 0, 100) * 0.9}deg`);
+        refs.crewHub.style.setProperty("--crew-hub-core", moodColor2);
+        refs.crewHub.innerHTML = `
+            <div class="deadwood-gui-crew-hub-metrics" aria-label="Crew totals">
+                <div class="deadwood-gui-crew-hub-metric is-morale">
+                    <span>Morale</span>
+                    <strong>${morale}</strong>
+                </div>
+                <div class="deadwood-gui-crew-hub-metric is-fear">
+                    <span>Fear</span>
+                    <strong>${fear}</strong>
+                </div>
+            </div>
+        `;
 
         refs.cattleAmount.textContent = `${snapshot.cattle.amount}`;
         refs.cattleHealth.textContent = `${snapshot.cattle.health} / ${snapshot.cattle.conditionLabel}`;
