@@ -200,9 +200,11 @@ type DeadwoodGuiSnapshot = {
         health: number;
         stress: number;
         stressLabel: string;
+        stressTone: "steady" | "worn" | "shaken" | "breaking";
         fatigue: number;
         blight: number;
         conditionLabel: string;
+        conditionTone: "steady" | "worn" | "shaken" | "breaking";
     };
     wagon: {
         structure: number;
@@ -3317,6 +3319,32 @@ namespace DeadwoodEngine {
         return "FAILING";
     }
 
+    function herdConditionTone(): "steady" | "worn" | "shaken" | "breaking" {
+        switch (herdConditionLabel()) {
+            case "STRONG":
+                return "steady";
+            case "SERVICEABLE":
+                return "worn";
+            case "WEAKENING":
+                return "shaken";
+            default:
+                return "breaking";
+        }
+    }
+
+    function herdStressTone(): "steady" | "worn" | "shaken" | "breaking" {
+        switch (herdStressLabel()) {
+            case "CALM":
+                return "steady";
+            case "WATCHFUL":
+                return "worn";
+            case "SKITTISH":
+                return "shaken";
+            default:
+                return "breaking";
+        }
+    }
+
     function statusAlerts(): DeadwoodUiAlert[] {
         const alerts: DeadwoodUiAlert[] = [];
 
@@ -3475,9 +3503,11 @@ namespace DeadwoodEngine {
                 health: state.herdHealth,
                 stress: state.herdStress,
                 stressLabel: herdStressLabel(),
+                stressTone: herdStressTone(),
                 fatigue: state.herdFatigue,
                 blight: state.herdBlight,
                 conditionLabel: herdConditionLabel(),
+                conditionTone: herdConditionTone(),
             },
             wagon: {
                 structure: state.wagonCondition,

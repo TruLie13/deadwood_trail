@@ -11,11 +11,9 @@ const DeadwoodGui = (() => {
         nextLocation: document.getElementById("deadwood-next-location"),
         crewHub: document.getElementById("deadwood-crew-hub"),
         cattleAmount: document.getElementById("deadwood-cattle-amount"),
-        cattleHealth: document.getElementById("deadwood-cattle-health"),
-        cattleStress: document.getElementById("deadwood-cattle-stress"),
-        cattleFatigue: document.getElementById("deadwood-cattle-fatigue"),
-        cattleBlight: document.getElementById("deadwood-cattle-blight"),
+        cattleStats: document.getElementById("deadwood-cattle-stats"),
         items: document.getElementById("deadwood-items"),
+        wagonMeters: document.getElementById("deadwood-wagon-meters"),
         crewCards: document.getElementById("deadwood-crew-cards"),
         crewDetail: document.getElementById("deadwood-crew-detail"),
         crewDetailClose: document.getElementById("deadwood-crew-detail-close"),
@@ -25,12 +23,14 @@ const DeadwoodGui = (() => {
         crewDetailStatus: document.getElementById("deadwood-crew-detail-status"),
         crewDetailStats: document.getElementById("deadwood-crew-detail-stats"),
         crewDetailFate: document.getElementById("deadwood-crew-detail-fate"),
-        commandForm: document.getElementById("deadwood-command-form"),
-        commandInput: document.getElementById("deadwood-command-input"),
         commandHint: document.getElementById("deadwood-command-hint"),
         commandButtons: document.getElementById("deadwood-command-buttons"),
         alerts: document.getElementById("deadwood-alerts"),
         reportLog: document.getElementById("deadwood-report-log"),
+        reportPanel: document.getElementById("deadwood-report-panel"),
+        underbar: document.getElementById("deadwood-gui-underbar"),
+        crewWheelPanel: document.getElementById("deadwood-crew-wheel-panel"),
+        stage: document.querySelector(".deadwood-gui-stage"),
         newRun: document.getElementById("deadwood-gui-new-run"),
         openShell: document.getElementById("deadwood-gui-open-shell"),
     };
@@ -45,6 +45,20 @@ const DeadwoodGui = (() => {
         ["blessedGrain", "Blessed Grain"],
         ["wardingOil", "Warding Oil"],
     ];
+
+    const itemIcons = {
+        food: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M224,104h-8.37a88,88,0,0,0-175.26,0H32a8,8,0,0,0-8,8,104.35,104.35,0,0,0,56,92.28V208a16,16,0,0,0,16,16h64a16,16,0,0,0,16-16v-3.72A104.35,104.35,0,0,0,232,112,8,8,0,0,0,224,104Zm-24.46,0H148.12a71.84,71.84,0,0,1,41.27-29.57A71.45,71.45,0,0,1,199.54,104ZM173.48,56.23q2.75,2.25,5.27,4.75a87.92,87.92,0,0,0-49.15,43H100.1A72.26,72.26,0,0,1,168,56C169.83,56,171.66,56.09,173.48,56.23ZM128,40a71.87,71.87,0,0,1,19,2.57A88.36,88.36,0,0,0,83.33,104H56.46A72.08,72.08,0,0,1,128,40Zm36.66,152A8,8,0,0,0,160,199.3V208H96v-8.7A8,8,0,0,0,91.34,192a88.29,88.29,0,0,1-51-72H215.63A88.29,88.29,0,0,1,164.66,192Z"/></svg>`,
+        blightedFood: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M92,104a28,28,0,1,0,28,28A28,28,0,0,0,92,104Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,92,144Zm72-40a28,28,0,1,0,28,28A28,28,0,0,0,164,104Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,164,144ZM128,16C70.65,16,24,60.86,24,116c0,34.1,18.27,66,48,84.28V216a16,16,0,0,0,16,16h80a16,16,0,0,0,16-16V200.28C213.73,182,232,150.1,232,116,232,60.86,185.35,16,128,16Zm44.12,172.69a8,8,0,0,0-4.12,7V216H152V192a8,8,0,0,0-16,0v24H120V192a8,8,0,0,0-16,0v24H88V195.69a8,8,0,0,0-4.12-7C56.81,173.69,40,145.84,40,116c0-46.32,39.48-84,88-84s88,37.68,88,84C216,145.83,199.19,173.69,172.12,188.69Z"/></svg>`,
+        ammo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M232,120h-8.34A96.14,96.14,0,0,0,136,32.34V24a8,8,0,0,0-16,0v8.34A96.14,96.14,0,0,0,32.34,120H24a8,8,0,0,0,0,16h8.34A96.14,96.14,0,0,0,120,223.66V232a8,8,0,0,0,16,0v-8.34A96.14,96.14,0,0,0,223.66,136H232a8,8,0,0,0,0-16Zm-96,87.6V200a8,8,0,0,0-16,0v7.6A80.15,80.15,0,0,1,48.4,136H56a8,8,0,0,0,0-16H48.4A80.15,80.15,0,0,1,120,48.4V56a8,8,0,0,0,16,0V48.4A80.15,80.15,0,0,1,207.6,120H200a8,8,0,0,0,0,16h7.6A80.15,80.15,0,0,1,136,207.6ZM128,88a40,40,0,1,0,40,40A40,40,0,0,0,128,88Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,152Z"/></svg>`,
+        supplies: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M223.68,66.15,135.68,18a15.88,15.88,0,0,0-15.36,0l-88,48.17a16,16,0,0,0-8.32,14v95.64a16,16,0,0,0,8.32,14l88,48.17a15.88,15.88,0,0,0,15.36,0l88-48.17a16,16,0,0,0,8.32-14V80.18A16,16,0,0,0,223.68,66.15ZM128,32l80.34,44-29.77,16.3-80.35-44ZM128,120,47.66,76l33.9-18.56,80.34,44ZM40,90l80,43.78v85.79L40,175.82Zm176,85.78h0l-80,43.79V133.82l32-17.51V152a8,8,0,0,0,16,0V107.55L216,90v85.77Z"/></svg>`,
+        cash: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm40-68a28,28,0,0,1-28,28h-4v8a8,8,0,0,1-16,0v-8H104a8,8,0,0,1,0-16h36a12,12,0,0,0,0-24H116a28,28,0,0,1,0-56h4V72a8,8,0,0,1,16,0v8h16a8,8,0,0,1,0,16H116a12,12,0,0,0,0,24h24A28,28,0,0,1,168,148Z"/></svg>`,
+        whiskey: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M245.66,42.34l-32-32a8,8,0,0,0-11.32,11.32l1.48,1.47L148.65,64.51l-38.22,7.65a8.05,8.05,0,0,0-4.09,2.18L23,157.66a24,24,0,0,0,0,33.94L64.4,233a24,24,0,0,0,33.94,0l83.32-83.31a8,8,0,0,0,2.18-4.09l7.65-38.22,41.38-55.17,1.47,1.48a8,8,0,0,0,11.32-11.32ZM96,107.31,148.69,160,104,204.69,51.31,152ZM81.37,224a7.94,7.94,0,0,1-5.65-2.34L34.34,180.28a8,8,0,0,1,0-11.31L40,163.31,92.69,216,87,221.66A8,8,0,0,1,81.37,224ZM177.6,99.2a7.92,7.92,0,0,0-1.44,3.23l-7.53,37.63L160,148.69,107.31,96l8.63-8.63,37.63-7.53a7.92,7.92,0,0,0,3.23-1.44l58.45-43.84,6.19,6.19Z"/></svg>`,
+        blessedGrain: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M208,56a87.53,87.53,0,0,0-31.85,6c-14.32-29.7-43.25-44.46-44.57-45.12a8,8,0,0,0-7.16,0c-1.33.66-30.25,15.42-44.57,45.12A87.53,87.53,0,0,0,48,56a8,8,0,0,0-8,8v80a88,88,0,0,0,176,0V64A8,8,0,0,0,208,56ZM120,215.56A72.1,72.1,0,0,1,56,144V128.44A72.1,72.1,0,0,1,120,200Zm0-66.1a88,88,0,0,0-64-37.09V72.44A72.1,72.1,0,0,1,120,144ZM94.15,69.11c9.22-19.21,26.41-31.33,33.85-35.9,7.44,4.58,24.63,16.7,33.84,35.9A88.61,88.61,0,0,0,128,107.36,88.57,88.57,0,0,0,94.15,69.11ZM200,144a72.1,72.1,0,0,1-64,71.56V200a72.1,72.1,0,0,1,64-71.56Zm0-31.63a88,88,0,0,0-64,37.09V144a72.1,72.1,0,0,1,64-71.56Z"/></svg>`,
+        wardingOil: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M174,47.75a254.19,254.19,0,0,0-41.45-38.3,8,8,0,0,0-9.18,0A254.19,254.19,0,0,0,82,47.75C54.51,79.32,40,112.6,40,144a88,88,0,0,0,176,0C216,112.6,201.49,79.32,174,47.75ZM128,216a72.08,72.08,0,0,1-72-72c0-57.23,55.47-105,72-118,16.53,13,72,60.75,72,118A72.08,72.08,0,0,1,128,216Zm55.89-62.66a57.6,57.6,0,0,1-46.56,46.55A8.75,8.75,0,0,1,136,200a8,8,0,0,1-1.32-15.89c16.57-2.79,30.63-16.85,33.44-33.45a8,8,0,0,1,15.78,2.68Z"/></svg>`,
+    };
+
+    const wagonVisualTopOffset = 58;
+    const wagonMeterGap = 8;
 
     const locationThemes = {
         "SAN ANTONIO": { sky: 0x86b8da, sun: 0xf1e39a, mesa: 0x6886b2, field: 0x58af0b, trail: 0x8a5a20, scrub: 0x85cd43, accent: 0x4f3514 },
@@ -118,7 +132,38 @@ const DeadwoodGui = (() => {
         crewAliveMap: {},
         // currently open crew detail id
         openCrewId: null,
+        guiOnboarding: {
+            active: false,
+            step: "intro-1",
+            startingCash: 0,
+            submitting: false,
+            baseQuantities: {
+                food: 0,
+                ammo: 0,
+                supplies: 0,
+                whiskey: 0,
+                grain: 0,
+                oil: 0,
+            },
+            selections: {
+                food: 0,
+                ammo: 0,
+                supplies: 0,
+                whiskey: 0,
+                grain: 0,
+                oil: 0,
+            },
+        },
     };
+
+    const storeCatalog = [
+        { key: "food", label: "Food", command: "food", price: 1, iconKey: "food" },
+        { key: "ammo", label: "Ammo", command: "ammo", price: 2, iconKey: "ammo" },
+        { key: "supplies", label: "Supplies", command: "supplies", price: 4, iconKey: "supplies" },
+        { key: "whiskey", label: "Whiskey", command: "whiskey", price: 15, iconKey: "whiskey" },
+        { key: "grain", label: "Blessed Grain", command: "blessed grain", price: 20, iconKey: "blessedGrain" },
+        { key: "oil", label: "Warding Oil", command: "warding oil", price: 25, iconKey: "wardingOil" },
+    ];
 
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
@@ -138,6 +183,21 @@ const DeadwoodGui = (() => {
             .join(" ");
     }
 
+    function titleCaseStatus(raw) {
+        return String(raw || "")
+            .toLowerCase()
+            .split(/[\s_]+/)
+            .filter(Boolean)
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ");
+    }
+
+    const herdStatusTones = new Set(["steady", "worn", "shaken", "breaking"]);
+
+    function normalizeHerdTone(tone) {
+        return herdStatusTones.has(tone) ? tone : "steady";
+    }
+
     function escapeHtml(value) {
         return String(value)
             .replace(/&/g, "&amp;")
@@ -147,12 +207,162 @@ const DeadwoodGui = (() => {
             .replace(/'/g, "&#39;");
     }
 
+    function ensureOnboardingRefs() {
+        if (refs.onboarding) {
+            return;
+        }
+
+        const rootEl = document.createElement("section");
+        rootEl.className = "deadwood-gui-onboarding";
+        rootEl.id = "deadwood-gui-onboarding";
+        rootEl.hidden = true;
+        rootEl.setAttribute("aria-live", "polite");
+        rootEl.innerHTML = `
+            <div class="deadwood-gui-onboarding-panel">
+                <div id="deadwood-gui-onboarding-kicker" class="deadwood-gui-onboarding-kicker">Deadwood Trail</div>
+                <h2 id="deadwood-gui-onboarding-title" class="deadwood-gui-onboarding-title">1888</h2>
+                <div id="deadwood-gui-onboarding-copy" class="deadwood-gui-onboarding-copy"></div>
+                <div id="deadwood-gui-store" class="deadwood-gui-store" hidden>
+                    <div class="deadwood-gui-store-head">
+                        <strong id="deadwood-gui-store-cash">$0</strong>
+                        <span>remaining cash</span>
+                    </div>
+                    <div id="deadwood-gui-store-items" class="deadwood-gui-store-items"></div>
+                    <button type="button" id="deadwood-gui-store-start" class="deadwood-gui-store-start">Start Trail</button>
+                </div>
+                <p id="deadwood-gui-onboarding-prompt" class="deadwood-gui-onboarding-prompt">Press Space to continue.</p>
+            </div>
+        `;
+        refs.stage.appendChild(rootEl);
+        refs.onboarding = rootEl;
+        refs.onboardingKicker = rootEl.querySelector("#deadwood-gui-onboarding-kicker");
+        refs.onboardingTitle = rootEl.querySelector("#deadwood-gui-onboarding-title");
+        refs.onboardingCopy = rootEl.querySelector("#deadwood-gui-onboarding-copy");
+        refs.onboardingPrompt = rootEl.querySelector("#deadwood-gui-onboarding-prompt");
+        refs.onboardingStore = rootEl.querySelector("#deadwood-gui-store");
+        refs.onboardingStoreCash = rootEl.querySelector("#deadwood-gui-store-cash");
+        refs.onboardingStoreItems = rootEl.querySelector("#deadwood-gui-store-items");
+        refs.onboardingStoreStart = rootEl.querySelector("#deadwood-gui-store-start");
+    }
+
+    function onboardingSpent() {
+        return storeCatalog.reduce((total, item) => {
+            const baseQuantity = state.guiOnboarding.baseQuantities[item.key] || 0;
+            const selectedQuantity = state.guiOnboarding.selections[item.key] || 0;
+            const purchasedQuantity = Math.max(0, selectedQuantity - baseQuantity);
+            return total + (purchasedQuantity * item.price);
+        }, 0);
+    }
+
+    function onboardingRemainingCash() {
+        return Math.max(0, state.guiOnboarding.startingCash - onboardingSpent());
+    }
+
+    function renderOnboardingStore() {
+        if (!refs.onboardingStoreItems || !refs.onboardingStoreCash) {
+            return;
+        }
+
+        const remainingCash = onboardingRemainingCash();
+        refs.onboardingStoreCash.textContent = `$${remainingCash}`;
+        refs.onboardingStoreItems.innerHTML = storeCatalog.map(item => {
+            const quantity = state.guiOnboarding.selections[item.key] || 0;
+            const minimumQuantity = state.guiOnboarding.baseQuantities[item.key] || 0;
+            const disableMinus = quantity <= minimumQuantity;
+            const disablePlus = remainingCash < item.price;
+            return `
+                <div class="deadwood-gui-store-row" data-store-item="${item.key}">
+                    <span class="deadwood-gui-store-row-icon">${itemIcons[item.iconKey] || ""}</span>
+                    <span class="deadwood-gui-store-row-name">${escapeHtml(item.label)}</span>
+                    <span class="deadwood-gui-store-row-price">$${item.price}</span>
+                    <div class="deadwood-gui-store-row-stepper">
+                        <button type="button" data-store-action="dec" data-store-item="${item.key}" ${disableMinus ? "disabled" : ""}>-</button>
+                        <span aria-label="${escapeHtml(`${item.label} quantity`)}">${quantity}</span>
+                        <button type="button" data-store-action="inc" data-store-item="${item.key}" ${disablePlus ? "disabled" : ""}>+</button>
+                    </div>
+                </div>
+            `;
+        }).join("");
+        refs.onboardingStoreStart.disabled = state.guiOnboarding.submitting;
+    }
+
+    function renderOnboarding() {
+        ensureOnboardingRefs();
+        const isVisible = state.presentationMode === "gui" && state.guiOnboarding.active;
+
+        refs.onboarding.hidden = !isVisible;
+        refs.gui.classList.toggle("is-onboarding", isVisible);
+        if (!isVisible) {
+            return;
+        }
+
+        if (state.guiOnboarding.step === "intro-1") {
+            refs.onboardingKicker.textContent = "Deadwood Trail";
+            refs.onboardingTitle.textContent = "1888";
+            refs.onboardingCopy.innerHTML = [
+                "San Antonio is the last place the sun still feels honest.",
+                "You are driving 500 untainted cattle to the Silver Fold in Nevada.",
+                "The herd is the score. Everything else exists to get them there.",
+            ].map(line => `<p>${escapeHtml(line)}</p>`).join("");
+            refs.onboardingPrompt.textContent = "Press Space to continue.";
+            refs.onboardingStore.hidden = true;
+            return;
+        }
+
+        if (state.guiOnboarding.step === "intro-2") {
+            refs.onboardingKicker.textContent = "Outfitting";
+            refs.onboardingTitle.textContent = "You Are To Outfit The Drive";
+            refs.onboardingCopy.innerHTML = [
+                "The merchant insists on a starter kit before you can shop freely.",
+                `Starter kit issued: ${state.guiOnboarding.baseQuantities.food} food, ${state.guiOnboarding.baseQuantities.ammo} ammo, ${state.guiOnboarding.baseQuantities.supplies} supplies.`,
+                "You are to outfit this drive for the long westward push.",
+                `After mandatory supplies, you are left with $${state.guiOnboarding.startingCash}.`,
+            ].map(line => `<p>${escapeHtml(line)}</p>`).join("");
+            refs.onboardingPrompt.textContent = "Press Space to open the store.";
+            refs.onboardingStore.hidden = true;
+            return;
+        }
+
+        refs.onboardingKicker.textContent = "Store Ledger";
+        refs.onboardingTitle.textContent = "Choose Your Supplies";
+        refs.onboardingCopy.innerHTML = "<p>Buy what you need. Remaining cash updates live.</p>";
+        refs.onboardingPrompt.textContent = "Use + and - to set quantity, then start the trail.";
+        refs.onboardingStore.hidden = false;
+        renderOnboardingStore();
+    }
+
+    function resetGuiOnboarding(snapshot = null) {
+        state.guiOnboarding.active = true;
+        state.guiOnboarding.step = "intro-1";
+        state.guiOnboarding.startingCash = snapshot?.items?.cash ?? 0;
+        state.guiOnboarding.submitting = false;
+        state.guiOnboarding.baseQuantities.food = snapshot?.items?.food ?? 0;
+        state.guiOnboarding.baseQuantities.ammo = snapshot?.items?.ammo ?? 0;
+        state.guiOnboarding.baseQuantities.supplies = snapshot?.items?.supplies ?? 0;
+        state.guiOnboarding.baseQuantities.whiskey = snapshot?.items?.whiskey ?? 0;
+        state.guiOnboarding.baseQuantities.grain = snapshot?.items?.blessedGrain ?? 0;
+        state.guiOnboarding.baseQuantities.oil = snapshot?.items?.wardingOil ?? 0;
+        storeCatalog.forEach(item => {
+            state.guiOnboarding.selections[item.key] = state.guiOnboarding.baseQuantities[item.key] || 0;
+        });
+        renderOnboarding();
+    }
+
     function setBanner(text) {
         if (!text) {
             return;
         }
 
         refs.bannerText.textContent = text;
+    }
+
+    function setWagonMeterAnchor(x, wagonY) {
+        if (!refs.wagonMeters) {
+            return;
+        }
+
+        refs.wagonMeters.style.setProperty("--wagon-meter-x", `${Math.round(x)}px`);
+        refs.wagonMeters.style.setProperty("--wagon-meter-y", `${Math.round(wagonY - wagonVisualTopOffset - wagonMeterGap)}px`);
     }
 
     function isGuiMode() {
@@ -172,6 +382,7 @@ const DeadwoodGui = (() => {
         if (refs.reportLog) {
             refs.reportLog.innerHTML = "";
         }
+        renderOnboarding();
     }
 
     function isSectionHeader(line) {
@@ -241,6 +452,7 @@ const DeadwoodGui = (() => {
         state.presentationMode = mode;
         App.presentationMode = mode;
         document.body.classList.remove("deadwood-mode-shell", "deadwood-mode-gui");
+        renderOnboarding();
 
         refs.gui.setAttribute("aria-hidden", mode === "gui" ? "false" : "true");
 
@@ -249,7 +461,6 @@ const DeadwoodGui = (() => {
             refs.launcher.hidden = true;
             ensurePhaser();
             window.requestAnimationFrame(() => {
-                refs.commandInput.focus();
                 resizePhaser();
             });
             return;
@@ -282,6 +493,7 @@ const DeadwoodGui = (() => {
 
             if (mode === "gui") {
                 clearOutput();
+                resetGuiOnboarding(state.snapshot);
             }
 
             setPresentation(mode);
@@ -332,7 +544,13 @@ const DeadwoodGui = (() => {
         refs.items.innerHTML = itemOrder.map(([key, label]) => {
             const value = snapshot.items[key];
             const formatted = key === "cash" ? `$${value}` : `${value}`;
-            return `<div><span>${label}</span><strong>${formatted}</strong></div>`;
+            return `
+                <div class="deadwood-gui-item-tile" data-item="${key}" data-label="${escapeHtml(label)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(`${label}: ${formatted}`)}">
+                    <span class="deadwood-gui-item-icon">${itemIcons[key]}</span>
+                    <span class="deadwood-gui-item-label">${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(formatted)}</strong>
+                </div>
+            `;
         }).join("");
     }
 
@@ -535,32 +753,42 @@ const DeadwoodGui = (() => {
     }
 
     function updateCommandHint(snapshot) {
+        if (state.guiOnboarding.active) {
+            refs.commandHint.textContent = "Complete the outfit sequence to begin issuing trail orders.";
+            return;
+        }
+
         if (!snapshot || !snapshot.active) {
             refs.commandHint.textContent = "Start a new GUI run or switch back to the terminal shell.";
             return;
         }
 
         if (snapshot.phase === "outfit" && snapshot.availableCommands.length === 0) {
-            refs.commandHint.textContent = "The merchant is waiting on a number. Type the amount and send it.";
+            refs.commandHint.textContent = "The merchant is waiting on a quantity. Use Open Shell to type a number for now.";
             return;
         }
 
         if (snapshot.phase === "trade" && snapshot.availableCommands.length === 0) {
-            refs.commandHint.textContent = "Choose the quantity to buy, then send the number.";
+            refs.commandHint.textContent = "Pick how much to buy. Use Open Shell to type a number for now.";
             return;
         }
 
         if (snapshot.phase === "outfit") {
-            refs.commandHint.textContent = "Click a supply to start a purchase, then enter the amount.";
+            refs.commandHint.textContent = "Click a supply button to start a purchase. For numeric amounts, use Open Shell until buttons support them.";
             return;
         }
 
         refs.commandHint.textContent = state.promptVisible
-            ? "Buttons cover common actions. Type raw commands when you need exact input."
+            ? "Choose a command button below. Use Open Shell if you need to type a full command."
             : "The engine is resolving the last order.";
     }
 
     function renderCommandButtons(snapshot) {
+        if (state.guiOnboarding.active) {
+            refs.commandButtons.innerHTML = "";
+            return;
+        }
+
         const models = commandButtonModels(snapshot);
         refs.commandButtons.innerHTML = models.map(model => `
             <button type="button" class="${model.cssClass}" data-command="${model.command}">${model.label}</button>
@@ -572,6 +800,16 @@ const DeadwoodGui = (() => {
 
         if (!snapshot) {
             return;
+        }
+
+        if (state.guiOnboarding.active && snapshot.phase !== "outfit") {
+            state.guiOnboarding.active = false;
+            renderOnboarding();
+        }
+
+        if (state.guiOnboarding.active && state.guiOnboarding.step !== "store" && snapshot.phase === "outfit") {
+            state.guiOnboarding.startingCash = snapshot.items.cash;
+            renderOnboarding();
         }
 
         setSummaryText(refs.week, snapshot.trail.week);
@@ -620,10 +858,49 @@ const DeadwoodGui = (() => {
         `;
 
         refs.cattleAmount.textContent = `${snapshot.cattle.amount}`;
-        refs.cattleHealth.textContent = `${snapshot.cattle.health} / ${snapshot.cattle.conditionLabel}`;
-        refs.cattleStress.textContent = `${snapshot.cattle.stress} / ${snapshot.cattle.stressLabel}`;
-        refs.cattleFatigue.textContent = `${snapshot.cattle.fatigue}`;
-        refs.cattleBlight.textContent = `${snapshot.cattle.blight}`;
+        refs.cattleStats.innerHTML = [
+            buildStatRowWithStatus(
+                "Health",
+                snapshot.cattle.health,
+                snapshot.cattle.conditionLabel,
+                normalizeHerdTone(snapshot.cattle.conditionTone),
+                "fill-health",
+                snapshot.cattle.health,
+                snapshot.cattle.health <= 40,
+                false
+            ),
+            buildStatRowWithStatus(
+                "Stress",
+                snapshot.cattle.stress,
+                snapshot.cattle.stressLabel,
+                normalizeHerdTone(snapshot.cattle.stressTone),
+                "fill-fear",
+                snapshot.cattle.stress,
+                false,
+                snapshot.cattle.stress >= 70
+            ),
+            buildStatRow(
+                "Fatigue",
+                `${snapshot.cattle.fatigue}`,
+                "fill-hunger",
+                snapshot.cattle.fatigue,
+                false,
+                snapshot.cattle.fatigue >= 70
+            ),
+            buildStatRow(
+                "Blight",
+                `${snapshot.cattle.blight}`,
+                "fill-structure",
+                snapshot.cattle.blight,
+                false,
+                snapshot.cattle.blight >= 70
+            )
+        ].join("");
+
+        refs.wagonMeters.innerHTML = [
+            buildStatRow("Structure", snapshot.wagon.structure, "fill-structure", snapshot.wagon.structure, snapshot.wagon.structure <= 40, false),
+            buildStatRow("Sanctity", snapshot.wagon.sanctity, "fill-sanctity", snapshot.wagon.sanctity, snapshot.wagon.sanctity <= 15, false)
+        ].join("");
 
         renderItems(snapshot);
         renderCrewCards(snapshot);
@@ -652,11 +929,10 @@ const DeadwoodGui = (() => {
             return;
         }
 
-        refs.commandInput.value = "";
         state.latestReportLines = [];
         state.captureReportBlock = true;
         renderReportLog();
-        App.deadwood.handleInput(input);
+        return App.deadwood.handleInput(input);
     }
 
     function ensurePhaser() {
@@ -851,8 +1127,11 @@ const DeadwoodGui = (() => {
             });
 
             this.landmark.y = horizon + 4;
-            this.wagon.setPosition(width * 0.74, height * 0.55);
+            const wagonX = width * 0.74;
+            const wagonY = height * 0.55;
+            this.wagon.setPosition(wagonX, wagonY);
             this.cattle.setPosition(width * 0.55, height * 0.56);
+            setWagonMeterAnchor(wagonX, wagonY);
         };
 
         TrailScene.prototype.applySnapshot = function (snapshot, previousMiles) {
@@ -932,6 +1211,56 @@ const DeadwoodGui = (() => {
         }
 
         state.phaserGame.scale.resize(refs.canvas.clientWidth, refs.canvas.clientHeight);
+        if (refs.wagonMeters) {
+            setWagonMeterAnchor(refs.canvas.clientWidth * 0.74, refs.canvas.clientHeight * 0.55);
+        }
+        updateCrewWheelScale();
+    }
+
+    function updateCrewWheelScale() {
+        if (!refs.crewWheelPanel || !refs.underbar || !refs.reportPanel) {
+            return;
+        }
+
+        const baseScale = 0.6875;
+        const compactScale = window.innerHeight <= 780 ? 0.54 : window.innerHeight <= 900 ? 0.62 : baseScale;
+        const minScale = window.innerWidth <= 720 ? 0.5 : 0.42;
+        const top = refs.underbar.getBoundingClientRect().top;
+        const reportTop = refs.reportPanel.getBoundingClientRect().top;
+        const availableHeight = Math.max(0, reportTop - top - 8);
+        const maxAllowedScale = availableHeight > 0 ? Math.min(baseScale, availableHeight / 352) : baseScale;
+        const nextScale = clamp(Math.min(compactScale, maxAllowedScale), minScale, baseScale);
+        refs.crewWheelPanel.style.setProperty("--crew-wheel-scale", `${nextScale}`);
+        if (state.openCrewId !== null) {
+            positionCrewDetailNearWheel();
+        }
+    }
+
+    function positionCrewDetailNearWheel() {
+        if (!refs.crewDetail || !refs.crewWheelPanel || !refs.stage) {
+            return;
+        }
+
+        const stageRect = refs.stage.getBoundingClientRect();
+        const wheelRect = refs.crewWheelPanel.getBoundingClientRect();
+        const detailStyles = window.getComputedStyle(refs.crewDetail);
+        const detailScale = Number.parseFloat(detailStyles.getPropertyValue("--crew-detail-scale")) || 1;
+        const detailWidth = refs.crewDetail.offsetWidth * detailScale;
+        const detailHeight = refs.crewDetail.offsetHeight * detailScale;
+        const gutter = 10;
+        const edgePadding = 8;
+
+        let left = wheelRect.right - stageRect.left + gutter;
+        const maxLeft = stageRect.width - detailWidth - edgePadding;
+        left = clamp(left, edgePadding, Math.max(edgePadding, maxLeft));
+
+        let top = wheelRect.top - stageRect.top;
+        const maxTop = stageRect.height - detailHeight - edgePadding;
+        top = clamp(top, edgePadding, Math.max(edgePadding, maxTop));
+
+        refs.crewDetail.style.left = `${Math.round(left)}px`;
+        refs.crewDetail.style.top = `${Math.round(top)}px`;
+        refs.crewDetail.style.bottom = "auto";
     }
 
     // ── Crew detail card ─────────────────────────────
@@ -949,6 +1278,29 @@ const DeadwoodGui = (() => {
                         ></div>
                     </div>
                     <span class="deadwood-crew-detail-stat-value">${value}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    function buildStatRowWithStatus(label, valueNum, statusRaw, statusTone, fillClass, pct, isLow, isHigh) {
+        const dangerClass = isLow ? " is-low" : isHigh ? " is-high" : "";
+        const pillText = titleCaseStatus(statusRaw);
+        const ariaValue = `${valueNum} ${pillText}`;
+        return `
+            <div class="deadwood-crew-detail-stat">
+                <span class="deadwood-crew-detail-stat-label">${label}</span>
+                <div class="deadwood-crew-detail-stat-bar-wrap">
+                    <div class="deadwood-crew-detail-stat-bar" aria-hidden="true">
+                        <div
+                            class="deadwood-crew-detail-stat-bar-fill ${fillClass}${dangerClass}"
+                            style="width:${pct}%"
+                        ></div>
+                    </div>
+                    <span class="deadwood-crew-detail-stat-value deadwood-gui-stat-value-with-badge" aria-label="${escapeHtml(ariaValue)}">
+                        <span class="deadwood-gui-stat-value-num">${escapeHtml(String(valueNum))}</span>
+                        <span class="deadwood-crew-detail-status-badge tone-${statusTone}">${escapeHtml(pillText)}</span>
+                    </span>
                 </div>
             </div>
         `;
@@ -1019,6 +1371,7 @@ const DeadwoodGui = (() => {
         populateCrewDetail(card);
         refs.crewDetail.hidden = false;
         refs.crewDetail.removeAttribute("aria-hidden");
+        window.requestAnimationFrame(positionCrewDetailNearWheel);
         refs.crewDetailClose.focus();
     }
 
@@ -1068,22 +1421,91 @@ const DeadwoodGui = (() => {
         if (event.key === "Escape" && state.openCrewId !== null) {
             closeCrewDetail();
         }
-    });
 
-    // ── Command form ─────────────────────────────────
+        if (!state.guiOnboarding.active || state.presentationMode !== "gui") {
+            return;
+        }
 
-    refs.commandForm.addEventListener("submit", event => {
+        if (event.key !== " " && event.code !== "Space") {
+            return;
+        }
+
+        const target = event.target;
+        if (target && target.closest && target.closest(".deadwood-gui-store")) {
+            return;
+        }
+
         event.preventDefault();
-        submitGuiCommand(refs.commandInput.value);
+        if (state.guiOnboarding.step === "intro-1") {
+            state.guiOnboarding.step = "intro-2";
+            renderOnboarding();
+            return;
+        }
+
+        if (state.guiOnboarding.step === "intro-2") {
+            state.guiOnboarding.step = "store";
+            renderOnboarding();
+        }
     });
 
     refs.commandButtons.addEventListener("click", event => {
+        if (state.guiOnboarding.active) {
+            return;
+        }
+
         const button = event.target.closest("button[data-command]");
         if (!button) {
             return;
         }
 
         submitGuiCommand(button.dataset.command);
+    });
+
+    refs.stage.addEventListener("click", async event => {
+        if (!state.guiOnboarding.active || state.guiOnboarding.step !== "store" || state.guiOnboarding.submitting) {
+            return;
+        }
+
+        const actionButton = event.target.closest("button[data-store-action]");
+        if (actionButton) {
+            const item = storeCatalog.find(entry => entry.key === actionButton.dataset.storeItem);
+            if (!item) {
+                return;
+            }
+
+            const current = state.guiOnboarding.selections[item.key] || 0;
+            const minimumQuantity = state.guiOnboarding.baseQuantities[item.key] || 0;
+            if (actionButton.dataset.storeAction === "dec") {
+                state.guiOnboarding.selections[item.key] = Math.max(minimumQuantity, current - 1);
+                renderOnboardingStore();
+                return;
+            }
+
+            if (actionButton.dataset.storeAction === "inc" && onboardingRemainingCash() >= item.price) {
+                state.guiOnboarding.selections[item.key] = current + 1;
+                renderOnboardingStore();
+            }
+            return;
+        }
+
+        if (!event.target.closest("#deadwood-gui-store-start")) {
+            return;
+        }
+
+        state.guiOnboarding.submitting = true;
+        state.guiOnboarding.active = false;
+        renderOnboarding();
+
+        for (const item of storeCatalog) {
+            const selectedQuantity = state.guiOnboarding.selections[item.key] || 0;
+            const baseQuantity = state.guiOnboarding.baseQuantities[item.key] || 0;
+            const quantityToBuy = Math.max(0, selectedQuantity - baseQuantity);
+            if (quantityToBuy > 0) {
+                await submitGuiCommand(`buy ${item.command} ${quantityToBuy}`);
+            }
+        }
+
+        await submitGuiCommand("start");
     });
 
     refs.newRun.addEventListener("click", () => {
@@ -1115,6 +1537,10 @@ const DeadwoodGui = (() => {
 
     window.addEventListener("resize", () => {
         resizePhaser();
+    });
+
+    window.addEventListener("deadwood:ui-snapshot", () => {
+        window.requestAnimationFrame(updateCrewWheelScale);
     });
 
     setPresentation("launcher");

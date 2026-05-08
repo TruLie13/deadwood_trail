@@ -50,32 +50,25 @@
     <div id="deadwood-gui" class="deadwood-gui" aria-hidden="true">
         <div class="deadwood-gui-stage-shell">
             <div class="deadwood-gui-stage">
-                <div id="deadwood-gui-canvas" class="deadwood-gui-canvas"></div>
+                <div class="deadwood-gui-viewport">
+                    <div id="deadwood-gui-canvas" class="deadwood-gui-canvas">
+                        <div class="deadwood-gui-wagon-meters" id="deadwood-wagon-meters"></div>
+                    </div>
                 <div class="deadwood-gui-overlay">
                     <div class="deadwood-gui-topbar">
                         <section class="deadwood-gui-hud-card deadwood-gui-hud-card-primary">
-                            <div class="deadwood-gui-panel-title">Trail</div>
                             <div class="deadwood-gui-summary-grid">
                                 <div><span>Week</span><strong id="deadwood-week">-</strong></div>
                                 <div><span>Miles</span><strong id="deadwood-miles">-</strong></div>
-                                <div class="deadwood-gui-summary-wide"><span>Location</span><strong id="deadwood-location">-</strong></div>
-                                <div class="deadwood-gui-summary-wide"><span>Next Landmark</span><strong id="deadwood-next-location">-</strong></div>
-                            </div>
-                        </section>
-
-                        <section class="deadwood-gui-hud-card">
-                            <div class="deadwood-gui-panel-title">Supplies</div>
-                            <div class="deadwood-gui-items" id="deadwood-items"></div>
-                        </section>
-
-                        <section class="deadwood-gui-hud-card">
-                            <div class="deadwood-gui-panel-title">Herd</div>
-                            <div class="deadwood-gui-stat-block deadwood-gui-stat-block-tight">
-                                <div><span>Amount</span><strong id="deadwood-cattle-amount">-</strong></div>
-                                <div><span>Health</span><strong id="deadwood-cattle-health">-</strong></div>
-                                <div><span>Stress</span><strong id="deadwood-cattle-stress">-</strong></div>
-                                <div><span>Fatigue</span><strong id="deadwood-cattle-fatigue">-</strong></div>
-                                <div><span>Blight</span><strong id="deadwood-cattle-blight">-</strong></div>
+                                <div class="deadwood-gui-location-row">
+                                    <span class="deadwood-gui-summary-icon" aria-label="Location">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                                            <path fill="currentColor" d="M128,64a40,40,0,1,0,40,40A40,40,0,0,0,128,64Zm0,64a24,24,0,1,1,24-24A24,24,0,0,1,128,128Zm0-112a88.1,88.1,0,0,0-88,88c0,31.4,14.51,64.68,42,96.25a254.19,254.19,0,0,0,41.45,38.3,8,8,0,0,0,9.18,0A254.19,254.19,0,0,0,174,200.25c27.45-31.57,42-64.85,42-96.25A88.1,88.1,0,0,0,128,16Zm0,206c-16.53-13-72-60.75-72-118a72,72,0,0,1,144,0C200,161.23,144.53,209,128,222Z"/>
+                                        </svg>
+                                    </span>
+                                    <strong id="deadwood-location">-</strong>
+                                </div>
+                                <div class="deadwood-gui-summary-wide deadwood-gui-next-row"><span>Next Landmark: </span><strong id="deadwood-next-location">-</strong></div>
                             </div>
                         </section>
                     </div>
@@ -85,12 +78,6 @@
                         <div id="deadwood-gui-banner-text" class="deadwood-gui-banner-text">Choose a mode to begin the drive west.</div>
                     </div>
 
-                    <section class="deadwood-gui-crew-wheel-panel">
-                        <div class="deadwood-gui-crew-wheel" id="deadwood-crew-wheel">
-                            <div class="deadwood-gui-crew-hub" id="deadwood-crew-hub"></div>
-                            <div class="deadwood-gui-crew-arc" id="deadwood-crew-cards"></div>
-                        </div>
-                    </section>
                     <div class="deadwood-gui-toast-stack" id="deadwood-alerts"></div>
                 </div>
 
@@ -122,21 +109,50 @@
                     <div class="deadwood-crew-detail-stats" id="deadwood-crew-detail-stats" aria-label="Crew member statistics"></div>
                     <div class="deadwood-crew-detail-fate" id="deadwood-crew-detail-fate" hidden></div>
                 </div>
+                </div>
+
+                <div class="deadwood-gui-underbar" id="deadwood-gui-underbar">
+                    <section class="deadwood-gui-crew-wheel-panel" id="deadwood-crew-wheel-panel">
+                        <div class="deadwood-gui-crew-wheel" id="deadwood-crew-wheel">
+                            <div class="deadwood-gui-crew-hub" id="deadwood-crew-hub"></div>
+                            <div class="deadwood-gui-crew-arc" id="deadwood-crew-cards"></div>
+                        </div>
+                    </section>
+
+                <div class="deadwood-gui-hud-strip">
+                    <section class="deadwood-gui-hud-card deadwood-gui-hud-card-supplies">
+                        <div class="deadwood-gui-panel-title">Items</div>
+                        <div class="deadwood-gui-items" id="deadwood-items"></div>
+                    </section>
+
+                    <section class="deadwood-gui-hud-card deadwood-gui-hud-card-herd">
+                        <div class="deadwood-gui-herd-header">
+                            <div class="deadwood-gui-panel-title">Herd</div>
+                            <div class="deadwood-gui-herd-bar-spacer" aria-hidden="true"></div>
+                            <div class="deadwood-gui-herd-amount">
+                                <strong id="deadwood-cattle-amount">-</strong>
+                                <span class="deadwood-gui-herd-amount-icon" aria-label="Herd amount">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true">
+                                        <path fill="currentColor" d="M104,192a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16H96A8,8,0,0,1,104,192Zm72-8H160a8,8,0,0,0,0,16h16a8,8,0,0,0,0-16Zm-76-48a12,12,0,1,0-12-12A12,12,0,0,0,100,136Zm56,0a12,12,0,1,0-12-12A12,12,0,0,0,156,136Zm88.39-13.88A16,16,0,0,1,232,128H200v32a40,40,0,0,1-24,72H80a40,40,0,0,1-24-72V128H24A16,16,0,0,1,8.31,109,56.13,56.13,0,0,1,63.22,64h1.64A55.83,55.83,0,0,1,48,24a8,8,0,0,1,16,0,40,40,0,0,0,40,40h48a40,40,0,0,0,40-40,8,8,0,0,1,16,0,55.83,55.83,0,0,1-16.86,40h1.64a56.13,56.13,0,0,1,54.91,45A15.82,15.82,0,0,1,244.39,122.12ZM72,152.8a40.57,40.57,0,0,1,8-.8h96a40.57,40.57,0,0,1,8,.8V104a24,24,0,0,0-24-24H96a24,24,0,0,0-24,24ZM56,112v-8a39.81,39.81,0,0,1,8-24h-.8A40.09,40.09,0,0,0,24,112Zm144,80a24,24,0,0,0-24-24H80a24,24,0,0,0,0,48h96A24,24,0,0,0,200,192Zm32-80a40.08,40.08,0,0,0-39.2-32H192a39.81,39.81,0,0,1,8,24v8Z"/>
+                                    </svg>
+                                </span>
+                            </div>
+                        </div>
+                        <div id="deadwood-cattle-stats" class="deadwood-gui-cattle-stats"></div>
+                    </section>
+                </div>
+                </div>
             </div>
         </div>
         <div class="deadwood-gui-dock">
-            <section class="deadwood-gui-panel deadwood-gui-report-panel">
+            <section class="deadwood-gui-panel deadwood-gui-report-panel" id="deadwood-report-panel">
                 <div class="deadwood-gui-panel-title">Trail Report</div>
                 <div class="deadwood-gui-report-log" id="deadwood-report-log"></div>
             </section>
 
             <section class="deadwood-gui-panel deadwood-gui-command-panel">
                 <div class="deadwood-gui-panel-title">Command</div>
-                <form id="deadwood-command-form" class="deadwood-command-form">
-                    <input id="deadwood-command-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command" />
-                    <button type="submit">Send</button>
-                </form>
-                <div class="deadwood-gui-command-hint" id="deadwood-command-hint">Use buttons for common actions or type full commands like BUY FOOD 20.</div>
+                <div class="deadwood-gui-command-hint" id="deadwood-command-hint">Use the command buttons below for available actions.</div>
                 <div class="deadwood-gui-command-buttons" id="deadwood-command-buttons"></div>
                 <div class="deadwood-gui-mode-buttons">
                     <button type="button" id="deadwood-gui-new-run">New GUI Run</button>

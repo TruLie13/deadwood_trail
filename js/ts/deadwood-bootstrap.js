@@ -16,6 +16,7 @@
     const style = document.createElement("style");
     style.textContent = `
         #deadwood-bootstrap-badge {
+            display: none;
             position: fixed;
             top: 12px;
             right: 12px;
@@ -31,8 +32,12 @@
             pointer-events: none;
         }
 
+        body.deadwood-mode-shell #deadwood-bootstrap-badge {
+            display: block;
+        }
+
         @media (max-width: 700px) {
-            #deadwood-bootstrap-badge {
+            body.deadwood-mode-shell #deadwood-bootstrap-badge {
                 top: auto;
                 right: 8px;
                 bottom: 8px;

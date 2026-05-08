@@ -13,12 +13,10 @@ const args = mri(process.argv.slice(2));
 
 const host = (args.hasOwnProperty("host")) ? args.host : "";
 const port = (args.hasOwnProperty("port")) ? args.port : 8080;
-const assetVersion = Date.now().toString();
-const cssAssets = assets.css.map(asset => `${asset}?v=${assetVersion}`);
-const jsAssets = assets.js.map(asset => `${asset}?v=${assetVersion}`);
 const reportsDir = path.join(process.cwd(), "reports", "deadwood-runs");
 
-const fileServer = new static.Server(".");
+// Disable node-static caching to ensure fresh files are served
+const fileServer = new static.Server(".", { cache: 0 });
 
 function sendJson(res, statusCode, payload) {
     if (res.headersSent || res.writableEnded) {
@@ -90,8 +88,14 @@ http.createServer((req, res) => {
         if (res.headersSent || res.writableEnded) {
             return;
         }
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.write(render(assets.html, cssAssets, jsAssets));
+        
+        // Generate a new timestamp on every page reload to bypass browser cache
+        const currentVersion = Date.now().toString();
+        const freshCssAssets = assets.css.map(asset => `${asset}?v=${currentVersion}`);
+        const freshJsAssets = assets.js.map(asset => `${asset}?v=${currentVersion}`);
+        
+        res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache, no-store, must-revalidate" });
+        res.write(render(assets.html, freshCssAssets, freshJsAssets));
         res.end();
     } else if (filePath.length !== 0) {
         if (res.headersSent || res.writableEnded) {

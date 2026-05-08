@@ -2473,6 +2473,30 @@ var DeadwoodEngine;
                 return "WEAKENING";
             return "FAILING";
         }
+        function herdConditionTone() {
+            switch (herdConditionLabel()) {
+                case "STRONG":
+                    return "steady";
+                case "SERVICEABLE":
+                    return "worn";
+                case "WEAKENING":
+                    return "shaken";
+                default:
+                    return "breaking";
+            }
+        }
+        function herdStressTone() {
+            switch (herdStressLabel()) {
+                case "CALM":
+                    return "steady";
+                case "WATCHFUL":
+                    return "worn";
+                case "SKITTISH":
+                    return "shaken";
+                default:
+                    return "breaking";
+            }
+        }
         function statusAlerts() {
             const alerts = [];
             if (state.phase === "outfit") {
@@ -2620,9 +2644,11 @@ var DeadwoodEngine;
                     health: state.herdHealth,
                     stress: state.herdStress,
                     stressLabel: herdStressLabel(),
+                    stressTone: herdStressTone(),
                     fatigue: state.herdFatigue,
                     blight: state.herdBlight,
                     conditionLabel: herdConditionLabel(),
+                    conditionTone: herdConditionTone(),
                 },
                 wagon: {
                     structure: state.wagonCondition,
