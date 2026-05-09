@@ -120,6 +120,11 @@ const DeadwoodGui = (() => {
         latestReportLines: [],
         captureReportBlock: false,
         lastAlertSignature: "",
+        alertQueue: [],
+        visibleAlerts: [],
+        alertPopulateTimerId: null,
+        alertDismissTimerIds: {},
+        nextAlertId: 1,
         promptVisible: false,
         presentationMode: "launcher",
         phaserGame: null,
@@ -154,6 +159,7 @@ const DeadwoodGui = (() => {
                 oil: 0,
             },
         },
+        endGameModalRunId: null,
     };
 
     const storeCatalog = [
@@ -164,6 +170,201 @@ const DeadwoodGui = (() => {
         { key: "grain", label: "Blessed Grain", command: "blessed grain", price: 20, iconKey: "blessedGrain" },
         { key: "oil", label: "Warding Oil", command: "warding oil", price: 25, iconKey: "wardingOil" },
     ];
+
+    const marketMetaByCommand = {
+        food: { label: "Food", iconKey: "food" },
+        ammo: { label: "Ammo", iconKey: "ammo" },
+        supplies: { label: "Supplies", iconKey: "supplies" },
+        oil: { label: "Warding Oil", iconKey: "wardingOil" },
+        "warding oil": { label: "Warding Oil", iconKey: "wardingOil" },
+        grain: { label: "Blessed Grain", iconKey: "blessedGrain" },
+        "blessed grain": { label: "Blessed Grain", iconKey: "blessedGrain" },
+        charm: { label: "Charm", customIconKey: "charm" },
+        vigil: { label: "Vigil", customIconKey: "vigil" },
+        tonic: { label: "Tonic", customIconKey: "tonic" },
+        mirror: { label: "Mirror", customIconKey: "mirror" },
+        nails: { label: "Nails", customIconKey: "nails" },
+        blessing: { label: "Blessing", customIconKey: "blessing" },
+        cache: { label: "Cache", customIconKey: "cache" },
+    };
+
+    const cattleCostIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M104,192a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16H96A8,8,0,0,1,104,192Zm72-8H160a8,8,0,0,0,0,16h16a8,8,0,0,0,0-16Zm-76-48a12,12,0,1,0-12-12A12,12,0,0,0,100,136Zm56,0a12,12,0,1,0-12-12A12,12,0,0,0,156,136Zm88.39-13.88A16,16,0,0,1,232,128H200v32a40,40,0,0,1-24,72H80a40,40,0,0,1-24-72V128H24A16,16,0,0,1,8.31,109,56.13,56.13,0,0,1,63.22,64h1.64A55.83,55.83,0,0,1,48,24a8,8,0,0,1,16,0,40,40,0,0,0,40,40h48a40,40,0,0,0,40-40,8,8,0,0,1,16,0,55.83,55.83,0,0,1-16.86,40h1.64a56.13,56.13,0,0,1,54.91,45A15.82,15.82,0,0,1,244.39,122.12ZM72,152.8a40.57,40.57,0,0,1,8-.8h96a40.57,40.57,0,0,1,8,.8V104a24,24,0,0,0-24-24H96a24,24,0,0,0-24,24ZM56,112v-8a39.81,39.81,0,0,1,8-24h-.8A40.09,40.09,0,0,0,24,112Zm144,80a24,24,0,0,0-24-24H80a24,24,0,0,0,0,48h96A24,24,0,0,0,200,192Zm32-80a40.08,40.08,0,0,0-39.2-32H192a39.81,39.81,0,0,1,8,24v8Z"/></svg>`;
+
+    function ensureEndGameModalRefs() {
+        if (refs.endgameModal) {
+            return;
+        }
+
+        const rootEl = document.createElement("section");
+        rootEl.className = "deadwood-gui-endgame-modal";
+        rootEl.id = "deadwood-gui-endgame-modal";
+        rootEl.hidden = true;
+        rootEl.innerHTML = `
+            <div class="deadwood-gui-endgame-panel">
+                <div id="deadwood-gui-endgame-kicker" class="deadwood-gui-endgame-kicker">Run Complete</div>
+                <h2 id="deadwood-gui-endgame-title" class="deadwood-gui-endgame-title">The Trail Is Done</h2>
+                <p id="deadwood-gui-endgame-copy" class="deadwood-gui-endgame-copy"></p>
+                <div id="deadwood-gui-endgame-report" class="deadwood-gui-endgame-report"></div>
+                <div class="deadwood-gui-endgame-score-head">
+                    <span>Final Score</span>
+                    <strong id="deadwood-gui-endgame-score">0</strong>
+                </div>
+                <div id="deadwood-gui-endgame-breakdown" class="deadwood-gui-endgame-breakdown"></div>
+                <div class="deadwood-gui-endgame-actions">
+                    <button type="button" id="deadwood-gui-endgame-close">Close</button>
+                </div>
+            </div>
+        `;
+
+        refs.stage.appendChild(rootEl);
+        refs.endgameModal = rootEl;
+        refs.endgameKicker = rootEl.querySelector("#deadwood-gui-endgame-kicker");
+        refs.endgameTitle = rootEl.querySelector("#deadwood-gui-endgame-title");
+        refs.endgameCopy = rootEl.querySelector("#deadwood-gui-endgame-copy");
+        refs.endgameReport = rootEl.querySelector("#deadwood-gui-endgame-report");
+        refs.endgameScore = rootEl.querySelector("#deadwood-gui-endgame-score");
+        refs.endgameBreakdown = rootEl.querySelector("#deadwood-gui-endgame-breakdown");
+        refs.endgameClose = rootEl.querySelector("#deadwood-gui-endgame-close");
+    }
+
+    function formatScoreDelta(value) {
+        const rounded = Math.round(value * 10) / 10;
+        const asText = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+        return `${rounded > 0 ? "+" : ""}${asText}`;
+    }
+
+    function endGameScoreBreakdown(report) {
+        if (!report || !report.summary || report.summary.score === null) {
+            return [];
+        }
+
+        const summary = report.summary;
+        const crewEnd = report.crew?.end || [];
+        const leaderAlive = crewEnd.some(member => member.alive && member.isLeader);
+        const nonLeaderAlive = crewEnd.filter(member => member.alive && !member.isLeader).length;
+        const thwartedRobberies = report.counters?.events?.["night-robbery-thwarted"] || 0;
+        const perfectHunts = report.counters?.hunt?.perfectHunts || 0;
+        const weekPenalty = Math.max(0, summary.weekEnded - 20) * 30;
+
+        return [
+            { label: "Cattle remaining", value: summary.cattleRemaining * 1.5 },
+            { label: "Cash remaining", value: summary.cashRemaining * 1.0 },
+            { label: "Leader survived", value: leaderAlive ? 80 : 0 },
+            { label: "Crew survived", value: nonLeaderAlive * 35 },
+            { label: "Wagon condition", value: summary.wagonCondition * 0.8 },
+            { label: "Morale", value: summary.morale * 0.5 },
+            { label: "Wagon sanctity", value: summary.wagonSanctity * 0.35 },
+            { label: "Robberies thwarted", value: Math.max(0, thwartedRobberies) * 10 },
+            { label: "Perfect hunts", value: Math.max(0, perfectHunts) * 25 },
+            { label: "Late week penalty", value: -weekPenalty },
+        ].filter(entry => Math.round(entry.value * 10) / 10 !== 0);
+    }
+
+    function crewOutcomeLabel(lossType) {
+        if (lossType === "death") return "Dead";
+        if (lossType === "desertion") return "Deserted";
+        if (lossType === "exile") return "Exiled";
+        return "Unknown";
+    }
+
+    function endGameCrewOutcomes(report) {
+        const endCrew = report?.crew?.end || [];
+        const losses = report?.crew?.losses || [];
+        const lossById = new Map();
+        losses.forEach(loss => {
+            lossById.set(loss.memberId, loss);
+        });
+
+        return endCrew.map(member => {
+            const loss = lossById.get(member.id);
+            if (loss) {
+                return {
+                    name: member.name,
+                    role: member.role,
+                    state: crewOutcomeLabel(loss.type),
+                    detail: loss.detail || "Lost on the trail.",
+                };
+            }
+
+            return {
+                name: member.name,
+                role: member.role,
+                state: member.alive ? "Alive" : "Gone",
+                detail: member.alive ? "Still with the wagon at run end." : "Gone from the trail.",
+            };
+        });
+    }
+
+    function renderEndGameModal(snapshot) {
+        ensureEndGameModalRefs();
+        const report = App.deadwood?.getRunReport ? App.deadwood.getRunReport() : null;
+        const shouldShow = Boolean(report && report.summary && snapshot && snapshot.active === false);
+        if (!shouldShow) {
+            refs.endgameModal.hidden = true;
+            refs.gui.classList.remove("is-endgame-open");
+            return;
+        }
+
+        const effectiveReport = report;
+        const runId = effectiveReport?.runId || "run-ended";
+        if (state.endGameModalRunId === runId && !refs.endgameModal.hidden) {
+            return;
+        }
+
+        state.endGameModalRunId = runId;
+        const score = effectiveReport?.summary?.score;
+        const outcome = effectiveReport?.summary?.outcome || "quit";
+        const failureCause = effectiveReport?.summary?.failureCause || null;
+        const breakdown = endGameScoreBreakdown(effectiveReport);
+        const positives = breakdown.filter(entry => entry.value > 0);
+        const negatives = breakdown.filter(entry => entry.value < 0);
+        const ordered = positives.concat(negatives);
+
+        refs.endgameKicker.textContent = outcome === "victory" ? "Victory" : "Run Complete";
+        refs.endgameTitle.textContent = outcome === "victory" ? "You Reached The Silver Fold" : "The Trail Took Its Due";
+        refs.endgameCopy.textContent = outcome === "victory"
+            ? "The herd survives the long drive west. Count what remains and mark the score."
+            : `The drive ended${failureCause ? ` (${String(failureCause).replace(/-/g, " ")})` : ""}. Gather the tally and try again.`;
+        refs.endgameScore.textContent = score === null ? "0" : String(score);
+        if (outcome === "victory") {
+            refs.endgameReport.innerHTML = "";
+        } else {
+            const crewOutcomes = endGameCrewOutcomes(effectiveReport);
+            refs.endgameReport.innerHTML = `
+                <div class="deadwood-gui-endgame-report-title">In Memoriam</div>
+                ${crewOutcomes.length
+                    ? crewOutcomes.map(entry => `
+                        <div class="deadwood-gui-endgame-report-line">
+                            <strong>${escapeHtml(entry.name)} (${escapeHtml(titleCaseCommand(entry.role))}) - ${escapeHtml(entry.state)}</strong>
+                            <div>${escapeHtml(entry.detail)}</div>
+                        </div>
+                    `).join("")
+                    : '<div class="deadwood-gui-endgame-report-line">No crew records available for this run.</div>'}
+            `;
+        }
+        refs.endgameBreakdown.hidden = ordered.length === 0;
+        refs.endgameBreakdown.innerHTML = ordered.length
+            ? ordered.map(entry => `
+                <div class="deadwood-gui-endgame-line">
+                    <span>${escapeHtml(entry.label)}</span>
+                    <strong class="${entry.value > 0 ? "is-positive" : "is-negative"}">${escapeHtml(formatScoreDelta(entry.value))}</strong>
+                </div>
+            `).join("")
+            : "";
+
+        refs.endgameModal.hidden = false;
+        refs.gui.classList.add("is-endgame-open");
+    }
+
+    const marketCustomIcons = {
+        charm: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M208,88h-56V32a8,8,0,0,0-16,0V88H80a8,8,0,0,0,0,16h56v56a8,8,0,0,0,16,0V104h56a8,8,0,0,0,0-16ZM128,184a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V192A8,8,0,0,0,128,184Zm88-64H192a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16ZM64,120H40a8,8,0,0,0,0,16H64a8,8,0,0,0,0-16Z"/></svg>`,
+        vigil: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M128,24C74,24,30.9,66.56,24.39,120.26a8,8,0,0,0,0,1.48C30.9,175.44,74,218,128,218s97.1-42.56,103.61-96.26a8,8,0,0,0,0-1.48C225.1,66.56,182,24,128,24Zm0,178c-44.37,0-80.54-34.88-87.45-80C47.46,76.88,83.63,42,128,42s80.54,34.88,87.45,80C208.54,167.12,172.37,202,128,202Zm0-128a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,74Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,154Z"/></svg>`,
+        tonic: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M176,24H80A24,24,0,0,0,56,48v12a24,24,0,0,0,16,22.63V224a8,8,0,0,0,16,0V184h80v40a8,8,0,0,0,16,0V82.63A24,24,0,0,0,200,60V48A24,24,0,0,0,176,24Zm8,36a8,8,0,0,1-8,8H80a8,8,0,0,1-8-8V48a8,8,0,0,1,8-8h96a8,8,0,0,1,8,8Zm-16,108H88V84h80Z"/></svg>`,
+        mirror: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M128,24A72,72,0,0,0,56,96c0,35.33,25.5,64.84,59,71.15V192H96a8,8,0,0,0,0,16h19.31L98.34,224.69a8,8,0,1,0,11.32,11.31L128,217.66,146.34,236a8,8,0,0,0,11.32-11.31L140.69,208H160a8,8,0,0,0,0-16H141V167.15c33.5-6.31,59-35.82,59-71.15A72,72,0,0,0,128,24Zm0,128a56,56,0,1,1,56-56A56.06,56.06,0,0,1,128,152Z"/></svg>`,
+        nails: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M238.63,73.37a8,8,0,0,0-11.31,0L192,108.69,147.31,64l35.32-35.31a8,8,0,0,0-11.31-11.32L136,52.69,103.31,20a8,8,0,0,0-11.31,11.31L124.69,64,108.69,80,76,47.31A8,8,0,0,0,64.69,58.63L97.37,91.31,64,124.69,31.31,92A8,8,0,0,0,20,103.31L52.69,136,17.37,171.31a8,8,0,0,0,11.31,11.32L64,147.31,108.69,192,73.37,227.31a8,8,0,0,0,11.31,11.32L120,203.31,152.69,236a8,8,0,0,0,11.31-11.31L131.31,192,147.31,176,180,208.69A8,8,0,0,0,191.31,197.37L158.63,164.69,192,131.31,224.69,164A8,8,0,0,0,236,152.69L203.31,120l35.32-35.31A8,8,0,0,0,238.63,73.37ZM136,164,92,120l44-44,44,44Z"/></svg>`,
+        blessing: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M128,24a8,8,0,0,0-8,8V72H80a8,8,0,0,0,0,16h40v40a8,8,0,0,0,16,0V88h40a8,8,0,0,0,0-16H136V32A8,8,0,0,0,128,24ZM56,136a8,8,0,0,0-8,8v16a64,64,0,0,0,128,0V144a8,8,0,0,0-16,0v16a48,48,0,0,1-96,0V144A8,8,0,0,0,56,136Zm144,0a8,8,0,0,0-8,8v16a48,48,0,0,1-24,41.57,8,8,0,1,0,8,13.85A64,64,0,0,0,208,160V144A8,8,0,0,0,200,136Z"/></svg>`,
+        cache: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-hidden="true"><path fill="currentColor" d="M216,56H40A16,16,0,0,0,24,72V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V72A16,16,0,0,0,216,56Zm0,16v26.11l-69.34,42.57a8,8,0,0,1-8.38,0L40,98.11V72ZM40,200V116.89l89.94,55.18a24,24,0,0,0,25.12,0L216,116.89V200Z"/></svg>`,
+    };
 
     function clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
@@ -243,6 +444,146 @@ const DeadwoodGui = (() => {
         refs.onboardingStoreCash = rootEl.querySelector("#deadwood-gui-store-cash");
         refs.onboardingStoreItems = rootEl.querySelector("#deadwood-gui-store-items");
         refs.onboardingStoreStart = rootEl.querySelector("#deadwood-gui-store-start");
+    }
+
+    function ensureMarketModalRefs() {
+        if (refs.marketModal) {
+            return;
+        }
+
+        const rootEl = document.createElement("section");
+        rootEl.className = "deadwood-gui-market-modal";
+        rootEl.id = "deadwood-gui-market-modal";
+        rootEl.hidden = true;
+        rootEl.innerHTML = `
+            <div class="deadwood-gui-market-panel">
+                <div id="deadwood-gui-market-kicker" class="deadwood-gui-market-kicker">Merchant</div>
+                <h2 id="deadwood-gui-market-title" class="deadwood-gui-market-title">Trade Offers</h2>
+                <div id="deadwood-gui-market-copy" class="deadwood-gui-market-copy"></div>
+                <div id="deadwood-gui-market-available" class="deadwood-gui-market-available"></div>
+                <div id="deadwood-gui-market-items" class="deadwood-gui-market-items"></div>
+                <div class="deadwood-gui-market-actions">
+                    <button type="button" id="deadwood-gui-market-back" class="deadwood-gui-market-back">Leave Market</button>
+                </div>
+            </div>
+        `;
+
+        refs.stage.appendChild(rootEl);
+        refs.marketModal = rootEl;
+        refs.marketKicker = rootEl.querySelector("#deadwood-gui-market-kicker");
+        refs.marketTitle = rootEl.querySelector("#deadwood-gui-market-title");
+        refs.marketCopy = rootEl.querySelector("#deadwood-gui-market-copy");
+        refs.marketAvailable = rootEl.querySelector("#deadwood-gui-market-available");
+        refs.marketItems = rootEl.querySelector("#deadwood-gui-market-items");
+        refs.marketBack = rootEl.querySelector("#deadwood-gui-market-back");
+    }
+
+    function tradeDescriptionByCommand() {
+        const map = {};
+        const marketHeaderIndex = (() => {
+            for (let index = state.outputLines.length - 1; index >= 0; index -= 1) {
+                if (state.outputLines[index] === "[MARKET]" || state.outputLines[index] === "[MERCHANT]") {
+                    return index;
+                }
+            }
+            return -1;
+        })();
+
+        if (marketHeaderIndex < 0) {
+            return map;
+        }
+
+        for (let index = marketHeaderIndex + 1; index < state.outputLines.length; index += 1) {
+            const line = state.outputLines[index];
+            const match = line.match(/^([A-Z ]+)\s*-\s*(.+)$/);
+            if (!match) {
+                continue;
+            }
+
+            const command = match[1].trim().toLowerCase();
+            map[command] = match[2].trim();
+        }
+
+        return map;
+    }
+
+    function tradeRowModel(command, descriptionByCommand) {
+        const key = command.toLowerCase();
+        const meta = marketMetaByCommand[key] || { label: titleCaseCommand(command), iconKey: "supplies" };
+        const description = descriptionByCommand[key] || "";
+        const costMatch = description.match(/COST\s+([^,]+)/i);
+        const gainMatch = description.match(/GAIN\s+(\d+)/i);
+        const costLabel = costMatch ? costMatch[1].trim() : "";
+        const quantityLabel = gainMatch ? `x${gainMatch[1]}` : "";
+        const isCattleCost = /cattle/i.test(costLabel);
+        const iconSvg = meta.customIconKey
+            ? (marketCustomIcons[meta.customIconKey] || itemIcons.supplies)
+            : (itemIcons[meta.iconKey] || itemIcons.supplies);
+
+        return {
+            command,
+            label: meta.label,
+            iconSvg,
+            costLabel,
+            quantityLabel,
+            isCattleCost,
+        };
+    }
+
+    function canonicalTradeOfferCommand(command) {
+        const normalized = String(command || "").toLowerCase();
+        if (normalized === "blessed grain") {
+            return "grain";
+        }
+        if (normalized === "warding oil") {
+            return "oil";
+        }
+        return normalized;
+    }
+
+    function renderMarketModal(snapshot) {
+        ensureMarketModalRefs();
+        const visible = !state.guiOnboarding.active && snapshot && snapshot.active && snapshot.phase === "trade";
+        refs.marketModal.hidden = !visible;
+        refs.gui.classList.toggle("is-market-modal-open", visible);
+        if (!visible) {
+            return;
+        }
+
+        const available = new Set(snapshot.availableCommands);
+        const offerCommands = [];
+        const seenOffers = new Set();
+        snapshot.availableCommands
+            .filter(command => !["back", "status", "help", "quit"].includes(command))
+            .forEach(command => {
+                const canonical = canonicalTradeOfferCommand(command);
+                if (seenOffers.has(canonical)) {
+                    return;
+                }
+                seenOffers.add(canonical);
+                offerCommands.push(available.has(canonical) ? canonical : command);
+            });
+
+        const offers = offerCommands.map(command => tradeRowModel(command, tradeDescriptionByCommand()));
+
+        refs.marketKicker.textContent = snapshot.location.current === "EL PASO" ? "Merchant" : "Market";
+        refs.marketTitle.textContent = snapshot.location.current === "EL PASO" ? "El Paso Offers" : "Trading Post Offers";
+        refs.marketCopy.innerHTML = state.latestReportLines.slice(-3).map(line => `<p>${escapeHtml(line)}</p>`).join("") || "<p>Choose one offer at a time.</p>";
+        const usesCattle = offers.some(offer => offer.isCattleCost);
+        refs.marketAvailable.innerHTML = usesCattle
+            ? `<span class="deadwood-gui-market-cattle-icon">${cattleCostIcon}</span><strong>${snapshot.cattle.amount}</strong><span>available cattle</span>`
+            : `<strong>$${snapshot.items.cash}</strong><span>available cash</span>`;
+        refs.marketItems.innerHTML = offers.map(offer => `
+            <div class="deadwood-gui-market-row">
+                <span class="deadwood-gui-market-row-icon">${offer.iconSvg}</span>
+                <span class="deadwood-gui-market-row-name">${escapeHtml(offer.label)}${offer.quantityLabel ? ` <small>(${escapeHtml(offer.quantityLabel)})</small>` : ""}</span>
+                <span class="deadwood-gui-market-row-cost">
+                    ${offer.isCattleCost ? `<span class="deadwood-gui-market-cattle-icon">${cattleCostIcon}</span>` : "$"}
+                    ${escapeHtml(offer.costLabel.replace(/\$/g, "").replace(/\s*CATTLE/i, "").trim())}
+                </span>
+                <button type="button" data-market-command="${offer.command}" ${available.has(offer.command) ? "" : "disabled"}>Acquire</button>
+            </div>
+        `).join("");
     }
 
     function onboardingSpent() {
@@ -375,6 +716,20 @@ const DeadwoodGui = (() => {
         state.captureReportBlock = false;
         state.crewFateLog = {};
         state.crewAliveMap = {};
+        state.lastAlertSignature = "";
+        state.alertQueue = [];
+        state.visibleAlerts = [];
+        if (state.alertPopulateTimerId) {
+            window.clearTimeout(state.alertPopulateTimerId);
+            state.alertPopulateTimerId = null;
+        }
+        Object.values(state.alertDismissTimerIds).forEach(timerId => {
+            window.clearTimeout(timerId);
+        });
+        state.alertDismissTimerIds = {};
+        if (refs.alerts) {
+            refs.alerts.innerHTML = "";
+        }
         if (state.openCrewId !== null && refs.crewDetail) {
             closeCrewDetail();
         }
@@ -439,6 +794,9 @@ const DeadwoodGui = (() => {
         if (visible) {
             state.captureReportBlock = false;
         }
+        // Prompt transitions usually mean command availability changed.
+        // Pull a fresh snapshot so command buttons update immediately.
+        syncSnapshot();
         updateCommandHint(state.snapshot);
     }
 
@@ -493,7 +851,7 @@ const DeadwoodGui = (() => {
 
             if (mode === "gui") {
                 clearOutput();
-                resetGuiOnboarding(state.snapshot);
+                state.endGameModalRunId = null;
             }
 
             setPresentation(mode);
@@ -502,6 +860,9 @@ const DeadwoodGui = (() => {
                 renderMode: mode,
             });
             syncSnapshot();
+            if (mode === "gui") {
+                resetGuiOnboarding(App.deadwood.getUiSnapshot ? App.deadwood.getUiSnapshot() : null);
+            }
         } finally {
             state.launchInFlight = false;
         }
@@ -647,8 +1008,44 @@ const DeadwoodGui = (() => {
             .slice(0, 3);
 
         const signature = alerts.map(alert => `${alert.kind}:${alert.text}`).join("|");
+        
+        function renderVisibleAlerts() {
+            refs.alerts.innerHTML = state.visibleAlerts.map(alert => `
+                <div class="deadwood-gui-alert kind-${alert.kind}">
+                    <div class="deadwood-gui-alert-kind">${alert.kind}</div>
+                    <div>${escapeHtml(alert.text)}</div>
+                </div>
+            `).join("");
+        }
+
+        function processAlertQueue() {
+            if (state.visibleAlerts.length > 0) {
+                return;
+            }
+
+            if (state.alertQueue.length === 0) {
+                state.alertPopulateTimerId = null;
+                return;
+            }
+
+            const alert = state.alertQueue.shift();
+            state.visibleAlerts.push(alert);
+            renderVisibleAlerts();
+            state.alertDismissTimerIds[alert.id] = window.setTimeout(() => {
+                state.visibleAlerts = state.visibleAlerts.filter(entry => entry.id !== alert.id);
+                delete state.alertDismissTimerIds[alert.id];
+                renderVisibleAlerts();
+                if (state.alertPopulateTimerId) {
+                    window.clearTimeout(state.alertPopulateTimerId);
+                }
+                state.alertPopulateTimerId = window.setTimeout(() => {
+                    state.alertPopulateTimerId = null;
+                    processAlertQueue();
+                }, 1250);
+            }, 5000);
+        }
+
         if (!alerts.length) {
-            refs.alerts.innerHTML = "";
             state.lastAlertSignature = "";
             return;
         }
@@ -657,12 +1054,26 @@ const DeadwoodGui = (() => {
             return;
         }
 
-        refs.alerts.innerHTML = alerts.map(alert => `
-            <div class="deadwood-gui-alert kind-${alert.kind}">
-                <div class="deadwood-gui-alert-kind">${alert.kind}</div>
-                <div>${escapeHtml(alert.text)}</div>
-            </div>
-        `).join("");
+        const activeSignatures = new Set([
+            ...state.visibleAlerts.map(alert => `${alert.kind}:${alert.text}`),
+            ...state.alertQueue.map(alert => `${alert.kind}:${alert.text}`),
+        ]);
+
+        alerts.forEach(alert => {
+            const alertSignature = `${alert.kind}:${alert.text}`;
+            if (activeSignatures.has(alertSignature)) {
+                return;
+            }
+            activeSignatures.add(alertSignature);
+            state.alertQueue.push({
+                id: state.nextAlertId,
+                kind: alert.kind,
+                text: alert.text,
+            });
+            state.nextAlertId += 1;
+        });
+
+        processAlertQueue();
         state.lastAlertSignature = signature;
     }
 
@@ -773,6 +1184,11 @@ const DeadwoodGui = (() => {
             return;
         }
 
+        if (snapshot.phase === "trade") {
+            refs.commandHint.textContent = "Choose an offer in the trade modal.";
+            return;
+        }
+
         if (snapshot.phase === "outfit") {
             refs.commandHint.textContent = "Click a supply button to start a purchase. For numeric amounts, use Open Shell until buttons support them.";
             return;
@@ -784,15 +1200,37 @@ const DeadwoodGui = (() => {
     }
 
     function renderCommandButtons(snapshot) {
-        if (state.guiOnboarding.active) {
+        if (state.guiOnboarding.active || (snapshot && snapshot.phase === "trade")) {
             refs.commandButtons.innerHTML = "";
             return;
         }
 
         const models = commandButtonModels(snapshot);
-        refs.commandButtons.innerHTML = models.map(model => `
+        const bottomMeta = [];
+        const primary = [];
+        models.forEach(model => {
+            if (model.command === "help" || model.command === "quit") {
+                bottomMeta.push(model);
+                return;
+            }
+            primary.push(model);
+        });
+
+        const primaryHtml = primary.map(model => `
             <button type="button" class="${model.cssClass}" data-command="${model.command}">${model.label}</button>
         `).join("");
+
+        const bottomMetaHtml = bottomMeta.length
+            ? `
+                <div class="deadwood-gui-command-secondary">
+                    ${bottomMeta.map(model => `
+                        <button type="button" class="${model.cssClass} is-secondary-meta" data-command="${model.command}">${model.label}</button>
+                    `).join("")}
+                </div>
+            `
+            : "";
+
+        refs.commandButtons.innerHTML = `${primaryHtml}${bottomMetaHtml}`;
     }
 
     function renderSnapshot(snapshot) {
@@ -813,7 +1251,7 @@ const DeadwoodGui = (() => {
         }
 
         setSummaryText(refs.week, snapshot.trail.week);
-        setSummaryText(refs.miles, `${snapshot.trail.miles}/${snapshot.trail.destinationMiles}`);
+        setSummaryText(refs.miles, `${Math.min(snapshot.trail.miles, snapshot.trail.destinationMiles)}/${snapshot.trail.destinationMiles}`);
         refs.location.textContent = snapshot.location.current;
         refs.nextLocation.textContent = snapshot.location.next
             ? `${snapshot.location.next} (${snapshot.location.milesToNext} mi)`
@@ -908,6 +1346,8 @@ const DeadwoodGui = (() => {
         renderReportLog();
         renderCommandButtons(snapshot);
         updateCommandHint(snapshot);
+        renderMarketModal(snapshot);
+        renderEndGameModal(snapshot);
 
         if (state.scene && state.scene.applySnapshot) {
             state.scene.applySnapshot(snapshot, state.lastMiles);
@@ -1508,6 +1948,26 @@ const DeadwoodGui = (() => {
         await submitGuiCommand("start");
     });
 
+    refs.stage.addEventListener("click", event => {
+        if (event.target.closest("#deadwood-gui-endgame-close")) {
+            if (refs.endgameModal) {
+                refs.endgameModal.hidden = true;
+            }
+            refs.gui.classList.remove("is-endgame-open");
+            return;
+        }
+
+        const acquireButton = event.target.closest("button[data-market-command]");
+        if (acquireButton) {
+            submitGuiCommand(acquireButton.dataset.marketCommand);
+            return;
+        }
+
+        if (event.target.closest("#deadwood-gui-market-back")) {
+            submitGuiCommand("back");
+        }
+    });
+
     refs.newRun.addEventListener("click", () => {
         launchMode("gui");
     });
@@ -1543,8 +2003,28 @@ const DeadwoodGui = (() => {
         window.requestAnimationFrame(updateCrewWheelScale);
     });
 
-    setPresentation("launcher");
-    setBanner("Choose the shell or the graphical trail view.");
+    let resumedFromRefresh = false;
+    if (App.deadwood && typeof App.deadwood.resumeSavedRun === "function") {
+        resumedFromRefresh = App.deadwood.resumeSavedRun();
+    }
+
+    if (resumedFromRefresh && App.deadwood && App.deadwood.getUiSnapshot) {
+        const restoredSnapshot = App.deadwood.getUiSnapshot();
+        const restoredMode = restoredSnapshot && restoredSnapshot.active && restoredSnapshot.renderMode === "gui"
+            ? "gui"
+            : "launcher";
+        setPresentation(restoredMode);
+        syncSnapshot();
+        if (restoredMode === "gui") {
+            if (restoredSnapshot && restoredSnapshot.phase === "outfit") {
+                resetGuiOnboarding(restoredSnapshot);
+            }
+            setBanner("Resumed your previous run after refresh.");
+        }
+    } else {
+        setPresentation("launcher");
+        setBanner("Choose the shell or the graphical trail view.");
+    }
 
     App.deadwoodGui = {
         launchMode,
